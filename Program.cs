@@ -1,6 +1,5 @@
 using Copeer.Core;
 using Copeer.UI;
-using System.Drawing.Drawing2D;
 
 namespace Copeer;
 
@@ -23,6 +22,7 @@ public class AppContext : ApplicationContext
 {
     public Settings S = null!;
     public ClipboardStore Store = null!;
+    public Icon AppIcon = null!; // достаём из exe — одна иконка везде (трей, окна, проводник)
 
     HotkeyHost host = null!;
     NotifyIcon tray = null!;
@@ -50,9 +50,10 @@ public class AppContext : ApplicationContext
         host.TaskbarRecreated += () => { tray.Visible = false; tray.Visible = true; };
         _ = host.Handle; // создаём окно сразу
 
+        AppIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
         tray = new NotifyIcon
         {
-            Icon = MakeIcon(),
+            Icon = AppIcon,
             Text = "Copeer — мультибуфер",
             Visible = true
         };
@@ -161,6 +162,15 @@ public class AppContext : ApplicationContext
         CapturePasteTarget();
         translator ??= new TranslatorForm(this);
         translator.OpenWithClipboard();
+    }
+
+    /// <summary>Открыть переводчик сразу с заданным текстом (например, из истории буфера).</summary>
+    public void ShowTranslatorWithText(string text)
+    {
+        Log.Info("show: translator (текст из истории)");
+        CapturePasteTarget();
+        translator ??= new TranslatorForm(this);
+        translator.OpenWithText(text);
     }
 
     SettingsForm? settings;
@@ -385,33 +395,8 @@ public class AppContext : ApplicationContext
         catch { }
         tray.Visible = false;
         tray.Dispose();
-        if (_iconHandle != IntPtr.Zero) Native.DestroyIcon(_iconHandle);
+        AppIcon.Dispose();
         host.Dispose();
         Application.Exit();
-    }
-
-    IntPtr _iconHandle;
-
-    Icon MakeIcon()
-    {
-        using var bmp = new Bitmap(32, 32);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            using var path = new GraphicsPath();
-            path.AddArc(0, 0, 12, 12, 180, 180);
-            path.AddArc(20, 0, 12, 12, 270, 180);
-            path.AddArc(20, 20, 12, 12, 0, 180);
-            path.AddArc(0, 20, 12, 12, 90, 180);
-            path.CloseFigure();
-            using var br = new LinearGradientBrush(new Rectangle(0, 0, 32, 32),
-                Color.FromArgb(0x4A, 0x9E, 0xFF), Color.FromArgb(0x7B, 0x4A, 0xE2), 45f);
-            g.FillPath(br, path);
-            using var f = new Font("Segoe UI", 17f, FontStyle.Bold, GraphicsUnit.Pixel);
-            var sz = g.MeasureString("C", f);
-            g.DrawString("C", f, Brushes.White, 16 - sz.Width / 2, 15 - sz.Height / 2);
-        }
-        _iconHandle = bmp.GetHicon(); // освобождаем DestroyIcon'ом в ExitApp
-        return Icon.FromHandle(_iconHandle);
     }
 }

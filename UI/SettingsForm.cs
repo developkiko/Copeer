@@ -29,8 +29,32 @@ class SettingsForm : Form
     readonly NumericUpDown _toastTime;
     readonly CheckBox _rememberTimeout;
     readonly CheckBox _autostart;
+    readonly ToolTip _tips = new();
+    readonly List<Button> _helpButtons = new();
     bool _busy;
     bool _saved;
+
+    // маленькая заметная кнопка [?]: подсказка-мануал по наведению, клик — открыть нужную страницу
+    Button MakeHelp(string manual, string url, int x, int y)
+    {
+        var b = new Button
+        {
+            Text = "?",
+            Size = new Size(22, 22),
+            Location = new Point(x, y),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Button,
+            ForeColor = Theme.Text,
+            Cursor = Cursors.Hand,
+            TabStop = false
+        };
+        b.FlatAppearance.BorderSize = 0;
+        _tips.SetToolTip(b, manual);
+        b.Click += (s, e) => OpenUrl(url);
+        Controls.Add(b);
+        _helpButtons.Add(b);
+        return b;
+    }
 
     static readonly Font SectionFont = new("Segoe UI", 9f, FontStyle.Bold);
     static readonly Font UiFont = new("Segoe UI", 9.5f);
@@ -38,6 +62,7 @@ class SettingsForm : Form
     public SettingsForm(AppContext c)
     {
         _c = c;
+        Icon = _c.AppIcon;
         Text = "Copeer — настройки";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(560, 848);
@@ -138,6 +163,12 @@ class SettingsForm : Form
         };
         Controls.Add(_engine);
         _ = LoadEnginesAsync();
+        MakeHelp(
+            "Движок — модель, которой Neurooo переводит: модели OpenAI, Anthropic и DeepSeek.\n" +
+            "Отличия — в точности, скорости и стиле: одни лучше держат разговорный тон, " +
+            "другие — деловой или длинные тексты. «По умолчанию» — Neurooo выбирает сам.\n" +
+            "Клик — официальная документация (англ., другой русской страницы у Neurooo нет).",
+            "https://neurooo.com/en/docs/api", 336, 119);
 
         Controls.Add(Section("ИСТОРИЯ БУФЕРА", 186));
 
@@ -251,6 +282,13 @@ class SettingsForm : Form
             _ => 0
         };
         Controls.Add(_ocrEngine);
+        MakeHelp(
+            "Как работает распознавание: Win+Shift+S → выделяешь область → внизу появляется плашка → кнопка «Распознать текст».\n" +
+            "Также можно выбрать картинку в истории (Win+V) и нажать 🔍 или клавишу L.\n\n" +
+            "«Встроенный (Windows)» — офлайн, без ключей; нужен языковой пакет OCR (обычно уже стоит).\n" +
+            "«Google Cloud Vision» — точнее на сложных текстах и рукописном, нужен ключ (см. [?] у поля ключа).\n" +
+            "Клик — раздел учётных данных Google.",
+            "https://console.cloud.google.com/apis/credentials", 524, 521);
 
         Controls.Add(L("Ключ Vision API", 14, 556));
         _gcvKey = new TextBox
@@ -264,6 +302,15 @@ class SettingsForm : Form
             Text = _c.S.OcrGcvKey
         };
         Controls.Add(_gcvKey);
+        MakeHelp(
+            "Как получить ключ Vision (бесплатно, ~1000 запросов/мес):\n" +
+            "1. console.cloud.google.com → создать проект\n" +
+            "2. APIs и сервисы → Библиотека → найти Cloud Vision API → Включить\n" +
+            "3. APIs и сервисы → Учётные данные → Создать учётные данные → Ключ API\n" +
+            "4. В ограничениях ключа оставить только Cloud Vision API\n" +
+            "5. Скопировать ключ сюда → Сохранить\n" +
+            "Клик — прямо в раздел «Учётные данные» консоли.",
+            "https://console.cloud.google.com/apis/credentials", 524, 553);
 
         Controls.Add(new Label
         {
@@ -354,6 +401,17 @@ class SettingsForm : Form
         }
         foreach (var chk in new[] { _captureImages, _captureFiles, _leavePasted, _autostart, _chkPrint, _rememberTimeout })
             chk.ForeColor = Theme.Text;
+        foreach (var b in _helpButtons)
+        {
+            b.BackColor = Theme.Button;
+            b.ForeColor = Theme.Text;
+        }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _tips.Dispose();
+        base.Dispose(disposing);
     }
 
     string HintKey() => string.IsNullOrWhiteSpace(_c.S.NeuroooApiKey)

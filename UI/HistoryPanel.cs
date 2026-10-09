@@ -8,6 +8,9 @@ class HistoryPanel : Form
     readonly AppContext _c;
     readonly TextBox _search = null!;
     readonly ListBox _list = null!;
+    readonly Button _btnOcr = null!;
+    readonly Button _btnTr = null!;
+    readonly Label _hint = null!;
     readonly List<Entry> _view = new();
     readonly Dictionary<string, Image> _thumbs = new();
 
@@ -33,8 +36,7 @@ class HistoryPanel : Form
             BorderStyle = BorderStyle.FixedSingle,
             Font = new Font("Segoe UI", 10.5f)
         };
-        _search.TextChanged += (s, e) => Repopulate();
-        _search.KeyDown += (s, e) =>
+        _search.TextChanged += (s, e) => Repopulate();        _search.KeyDown += (s, e) =>
         {
             if (e.KeyCode == Keys.Down && _list.Items.Count > 0)
             {
@@ -49,7 +51,38 @@ class HistoryPanel : Form
                 _list.Focus();
             }
         };
+        // кнопки действий над выбранной строкой: распознать картинку / перевести текст
+        _btnOcr = new Button
+        {
+            Text = "🔍",
+            Dock = DockStyle.Right,
+            Width = 34,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Button,
+            ForeColor = Theme.Text,
+            Enabled = false,
+            TabStop = false,
+            Cursor = Cursors.Hand
+        };
+        _btnOcr.FlatAppearance.BorderSize = 0;
+        _btnOcr.Click += (s, e) => _ = OcrSelectedAsync();
+        _btnTr = new Button
+        {
+            Text = "🌐",
+            Dock = DockStyle.Right,
+            Width = 34,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Button,
+            ForeColor = Theme.Text,
+            Enabled = false,
+            TabStop = false,
+            Cursor = Cursors.Hand
+        };
+        _btnTr.FlatAppearance.BorderSize = 0;
+        _btnTr.Click += (s, e) => TranslateSelected();
         top.Controls.Add(_search);
+        top.Controls.Add(_btnOcr);
+        top.Controls.Add(_btnTr);
 
         _list = new ListBox
         {
@@ -79,20 +112,66 @@ class HistoryPanel : Form
         {
             Dock = DockStyle.Bottom,
             Height = 24,
-            Text = "Enter / 2×клик — вставить   •   Del — удалить   •   Esc — закрыть",
-            ForeColor = Theme.TextDim,
-            BackColor = Theme.Back,
+            Text = "Enter / 2×клик — вставить   •   L — распознать   •   T — перевести   •   Del — удалить   •   Esc",
+            ForeColor = Theme.Text,
+            BackColor = Theme.Panel, // статусная строка выделена цветом панели
             Font = new Font("Segoe UI", 8.5f),
             TextAlign = ContentAlignment.MiddleCenter
         };
+        _hint = hint;
 
         Controls.Add(_list);
         Controls.Add(top);
         Controls.Add(hint);
 
+        _list.SelectedIndexChanged += (s, e) => UpdateActions();
+        UpdateActions();
+
         Deactivate += (s, e) => { if ((DateTime.UtcNow - _shownAt).TotalMilliseconds > 300) Hide(); };
-        KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) Hide(); };
+        KeyDown += (s, e) =>
+        {
+            if (e.KeyCode == Keys.Escape) { Hide(); return; }
+            if (ActiveControl == _search) return; // в поиске печатают — L/T не перехватываем
+            if (e.KeyCode == Keys.L && _btnOcr.Enabled) { e.Handled = e.SuppressKeyPress = true; _ = OcrSelectedAsync(); }
+            if (e.KeyCode == Keys.T && _btnTr.Enabled) { e.Handled = e.SuppressKeyPress = true; TranslateSelected(); }
+        };
         _c.Store.Changed += OnStoreChanged;
+    }
+
+    Entry? Selected => _list.SelectedIndex >= 0 && _list.SelectedIndex < _view.Count ? _view[_list.SelectedIndex] : null;
+
+    void UpdateActions()
+    {
+        var it = Selected;
+        _btnOcr.Enabled = it is { Kind: EntryKind.Image } && Ocr.IsConfigured(_c.S);
+        _btnTr.Enabled = it is { Kind: EntryKind.Text };
+    }
+
+    async Task OcrSelectedAsync()
+    {
+        if (Selected is not { Kind: EntryKind.Image, ImageFile: { } file }) return;
+        try
+        {
+            using var bmp = new Bitmap(file);
+            var res = await Ocr.RecognizeAsync(_c.S, bmp);
+            if (res.Ok)
+            {
+                _c.SuppressClipboard();
+                try { Clipboard.SetText(res.Text); } catch { }
+                _c.Store.AddText(res.Text); // Changed обновит список, текст окажется сверху
+            }
+            else
+            {
+                MessageBox.Show(this, res.Error, "Распознавание текста", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+        catch (Exception ex) { Log.Error("history ocr", ex); }
+    }
+
+    void TranslateSelected()
+    {
+        if (Selected is { Kind: EntryKind.Text } t && t.Text.Length > 0)
+            _c.ShowTranslatorWithText(t.Text);
     }
 
     DateTime _shownAt;
@@ -170,7 +249,8 @@ class HistoryPanel : Form
     {
         if (e.Index < 0) return;
         bool sel = (e.State & DrawItemState.Selected) != 0;
-        using (var bg = new SolidBrush(sel ? Theme.SelRow : Theme.Back))
+        bool zebra = e.Index % 2 == 1; // чередование строк
+        using (var bg = new SolidBrush(sel ? Theme.SelRow : zebra ? Theme.Zebra : Theme.Back))
             e.Graphics.FillRectangle(bg, e.Bounds);
 
         if (e.Index >= _view.Count) return;

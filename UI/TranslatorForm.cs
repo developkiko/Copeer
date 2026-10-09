@@ -18,6 +18,7 @@ class TranslatorForm : Form
     public TranslatorForm(AppContext c)
     {
         _c = c;
+        Icon = _c.AppIcon;
         Text = "Copeer — переводчик (Neurooo)";
         StartPosition = FormStartPosition.Manual;
         TopMost = true; // не теряется за проводником и другими окнами
@@ -203,6 +204,25 @@ class TranslatorForm : Form
         Activate();
         _src.Focus();
         _src.SelectionStart = _src.TextLength;
+    }
+
+    /// <summary>Открыть с заданным текстом (из истории буфера) и сразу перевести.</summary>
+    public void OpenWithText(string text)
+    {
+        _src.Text = text.Length > 12_000 ? text[..12_000] : text;
+        _dst.Text = "";
+        _status.Text = "";
+
+        var wa = Screen.FromPoint(Cursor.Position).WorkingArea;
+        Location = new Point(wa.Left + (wa.Width - Width) / 2, wa.Top + (wa.Height - Height) / 2);
+        Show();
+        BringToFront();
+        Activate();
+        _src.Focus();
+        _src.SelectionStart = _src.TextLength;
+
+        if (!string.IsNullOrWhiteSpace(_c.S.NeuroooApiKey)) RunTranslate();
+        else _status.Text = "Ключ Neurooo не задан — см. README";
     }
 
     static string? TryClipboardText()

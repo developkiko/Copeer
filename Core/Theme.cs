@@ -13,6 +13,7 @@ public static class Theme
 
     public static Color Back    => Light ? Color.FromArgb(246, 246, 248) : Color.FromArgb(28, 28, 30);
     public static Color Panel   => Light ? Color.FromArgb(238, 238, 242) : Color.FromArgb(37, 37, 40);
+    public static Color Zebra   => Light ? Color.FromArgb(240, 240, 244) : Color.FromArgb(34, 34, 37);
     public static Color Field   => Light ? Color.White : Color.FromArgb(45, 45, 48);
     public static Color Button  => Light ? Color.FromArgb(228, 228, 233) : Color.FromArgb(55, 55, 60);
     public static Color Chip    => Light ? Color.FromArgb(228, 228, 233) : Color.FromArgb(45, 45, 48);

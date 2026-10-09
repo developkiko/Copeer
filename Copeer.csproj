@@ -9,7 +9,8 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Copeer</AssemblyName>
     <RootNamespace>Copeer</RootNamespace>
-    <Version>0.2.0</Version>
+    <ApplicationIcon>Copeer.ico</ApplicationIcon>
+    <Version>0.3.0</Version>
     <Product>Copeer</Product>
     <Description>Мультибуфер с историей (Win+V), панель эмодзи и символов (Win+.), скриншоты (Win+Shift+S) и переводчик на Neurooo API (Win+T)</Description>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
