@@ -31,6 +31,7 @@ public class AppContext : ApplicationContext
     EmojiPanel? emoji;
     TranslatorForm? translator;
     SnipOverlay? snip;
+    SnipToast? snipToast;
     KeyboardHook? hook;
 
     DateTime _suppressUntil;
@@ -46,6 +47,7 @@ public class AppContext : ApplicationContext
         host = new HotkeyHost();
         host.Hotkey += OnHotkey;
         host.ClipboardChanged += OnClipboardChanged;
+        host.TaskbarRecreated += () => { tray.Visible = false; tray.Visible = true; };
         _ = host.Handle; // создаём окно сразу
 
         tray = new NotifyIcon
@@ -65,6 +67,7 @@ public class AppContext : ApplicationContext
         // комбинации, которые не удалось занять через RegisterHotKey (держит сама Windows),
         // перехватываем низкоуровневым хуком; обработка уходит из колбэка хука в очередь хоста
         hook = new KeyboardHook { Sync = host };
+        hook.InterceptSnapshot = S.InterceptPrintScreen;
         hook.ComboHit = vk =>
         {
             switch ((uint)vk)
@@ -72,6 +75,7 @@ public class AppContext : ApplicationContext
                 case KeyboardHook.VK_PERIOD: ShowEmoji(); break;
                 case KeyboardHook.VK_S: ShowSnip(); break;
                 case KeyboardHook.VK_T: ShowTranslator(); break;
+                case 0x2C: ShowSnip(); break; // PrintScreen
             }
         };
         // клавиши, успешно занятые через RegisterHotKey, хук не трогает (иначе двойное срабатывание);
@@ -183,6 +187,13 @@ public class AppContext : ApplicationContext
         emoji?.Dispose(); emoji = null;
         translator?.Dispose(); translator = null;
         snip?.Dispose(); snip = null;
+        snipToast?.Dispose(); snipToast = null;
+    }
+
+    /// <summary>Применение настроек, влияющих на хук (вызывается после сохранения настроек).</summary>
+    public void ApplyHookSettings()
+    {
+        if (hook != null) hook.InterceptSnapshot = S.InterceptPrintScreen;
     }
 
     public void AddRecentSymbol(string ch)
@@ -194,17 +205,29 @@ public class AppContext : ApplicationContext
         S.Save();
     }
 
+    Bitmap? _lastShot;
+
     /// <summary>Принимает владение снимком: битмап не диспоузится, пока живёт на клипборде.</summary>
     public void OnScreenshot(Bitmap bmp)
     {
         SuppressClipboard();
         try { Clipboard.SetImage(bmp); } catch (Exception e) { Log.Error("screenshot clipboard", e); }
         Store.AddImage(new Bitmap(bmp));
+
+        // держим ссылку на время возможного OCR, показываем плашку (она фокус не забирает)
+        _lastShot = bmp;
+        snipToast ??= new SnipToast(this);
+        snipToast.ShowFor(bmp);
     }
 
     // ——— буфер обмена ———
 
     void OnClipboardChanged()
+    {
+        _ = HandleClipboardChangedAsync();
+    }
+
+    async Task HandleClipboardChangedAsync()
     {
         try
         {
@@ -221,6 +244,7 @@ public class AppContext : ApplicationContext
                 var files = data.GetData(DataFormats.FileDrop) as string[];
                 if (files is { Length: > 0 })
                 {
+                    if (IsDuplicate("F:" + string.Join("\n", files))) return;
                     Log.Info($"clipboard: files x{files.Length}");
                     Store.AddFiles(files);
                     return;
@@ -232,20 +256,52 @@ public class AppContext : ApplicationContext
                 var t = data.GetData(DataFormats.Text) as string;
                 if (!string.IsNullOrEmpty(t))
                 {
+                    if (IsDuplicate("T:" + t)) return;
                     Log.Info($"clipboard: text ({t.Length} симв.)");
                     Store.AddText(t);
                     return;
                 }
             }
 
-            if (CaptureImage(data)) return;
+            if (await CaptureImageAsync(data)) return;
 
-            Log.Info($"clipboard: нет поддерживаемого формата [{string.Join(", ", data.GetFormats().Take(8))}]");
+            var formats = data.GetFormats();
+            if (formats.Length == 0) return; // переходное состояние, не мусорим в лог
+            Log.Info($"clipboard: нет поддерживаемого формата [{string.Join(", ", formats.Take(8))}]");
         }
         catch (Exception ex) { Log.Error("clipboard read", ex); }
     }
 
-    bool CaptureImage(IDataObject data)
+    // Explorer выставляет буфер в несколько приёмов (FileDrop, DropEffect, служебные) —
+    // одно копирование даёт 2-3 обновления; отсекаем повторы, чтобы не плодить дубли в истории
+    string _lastSig = "";
+    DateTime _lastSigAt = DateTime.MinValue;
+
+    bool IsDuplicate(string sig)
+    {
+        var now = DateTime.UtcNow;
+        if (sig == _lastSig && (now - _lastSigAt).TotalMilliseconds < 800) return true;
+        _lastSig = sig;
+        _lastSigAt = now;
+        return false;
+    }
+
+    static byte[]? PngBytes(object? raw) => raw switch
+    {
+        MemoryStream ms => ms.ToArray(),
+        byte[] b => b,
+        Stream st => StreamToBytes(st),
+        _ => null
+    };
+
+    static byte[] StreamToBytes(Stream st)
+    {
+        using var m = new MemoryStream();
+        st.CopyTo(m);
+        return m.ToArray();
+    }
+
+    async Task<bool> CaptureImageAsync(IDataObject data)
     {
         if (!S.CaptureImages) return false;
         for (int attempt = 0; attempt < 3; attempt++)
@@ -257,6 +313,7 @@ public class AppContext : ApplicationContext
                     using var img = data.GetData(DataFormats.Bitmap) as Image;
                     if (img != null)
                     {
+                        if (IsDuplicate($"I:{img.Width}x{img.Height}")) return true;
                         Log.Info($"clipboard: image {img.Width}x{img.Height}");
                         Store.AddImage(new Bitmap(img));
                         return true;
@@ -264,9 +321,12 @@ public class AppContext : ApplicationContext
                 }
                 if (data.GetDataPresent("PNG"))
                 {
-                    if (data.GetData("PNG") is MemoryStream ms)
+                    // источник может отдать PNG как MemoryStream, byte[] или любой Stream (Telegram — по-разному)
+                    byte[]? bytes = PngBytes(data.GetData("PNG"));
+                    if (bytes != null)
                     {
-                        using var png = new Bitmap(ms);
+                        using var png = new Bitmap(new MemoryStream(bytes));
+                        if (IsDuplicate($"I:{png.Width}x{png.Height}")) return true;
                         Log.Info($"clipboard: png {png.Width}x{png.Height}");
                         Store.AddImage(new Bitmap(png));
                         return true;
@@ -276,9 +336,10 @@ public class AppContext : ApplicationContext
             }
             catch (Exception ex)
             {
-                // источник мог ещё не отдать данные (delayed rendering) — пробуем снова
+                // источник мог ещё не отдать данные (delayed rendering) — пробуем снова,
+                // но ждём через Task.Delay, не блокируя UI-поток
                 Log.Error($"clipboard image (попытка {attempt + 1})", ex);
-                Thread.Sleep(60);
+                await Task.Delay(60);
             }
         }
         return false;

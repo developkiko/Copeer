@@ -24,12 +24,16 @@ public class KeyboardHook : IDisposable
 
     const uint VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12;
     const uint VK_LWIN = 0x5B, VK_RWIN = 0x5C;
+    const uint VK_SNAPSHOT = 0x2C; // PrintScreen
     public const uint VK_PERIOD = 0xBE, VK_T = 0x54, VK_S = 0x53, VK_V = 0x56;
 
     readonly LowLevelKeyboardProc _proc;
     readonly Action<int> _dispatch;
     IntPtr _hook;
     readonly HashSet<uint> _skip = new(); // vk, занятые нашим RegisterHotKey
+
+    /// <summary>PrintScreen (с любыми модификаторами) глотается и открывает скриншот Copeer.</summary>
+    public bool InterceptSnapshot;
 
     delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
 
@@ -83,6 +87,17 @@ public class KeyboardHook : IDisposable
                     if (win)
                         Log.Info($"hook vk=0x{kbd.vkCode:X2} win=True shift={Key(VK_SHIFT)} " +
                                  $"ctrl={Key(VK_CONTROL)} alt={Key(VK_MENU)} inj={(kbd.flags & LLKHF_INJECTED) != 0}");
+                }
+
+                // PrintScreen — без требования Win, с любыми модификаторами
+                if (InterceptSnapshot && kbd.vkCode == VK_SNAPSHOT)
+                {
+                    int snap = (int)kbd.vkCode;
+                    if (Sync != null)
+                        Sync.BeginInvoke(_dispatch, new object?[] { snap });
+                    else
+                        _dispatch(snap);
+                    return (IntPtr)1;
                 }
 
                 if (!_skip.Contains(kbd.vkCode) && MatchesShift(kbd.vkCode))

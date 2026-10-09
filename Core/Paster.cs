@@ -7,6 +7,10 @@ namespace Copeer.Core;
 /// </summary>
 public static class Paster
 {
+    // номер текущей вставки: быстрые вставки подряд не должны
+    // перебивать Ctrl+V и возврат буфера друг у друга
+    static int _generation;
+
     public static void Paste(AppContext ctx, Entry entry)
     {
         try
@@ -38,6 +42,7 @@ public static class Paster
     static async Task PasteTextAsync(AppContext ctx, string text)
     {
         if (string.IsNullOrEmpty(text)) return;
+        var g = ++_generation;
         ctx.HidePanels();
         var prev = Snapshot();
         ctx.SuppressClipboard();
@@ -45,8 +50,10 @@ public static class Paster
         catch (Exception e) { Log.Error("clipboard set text", e); return; }
         var seq = Native.GetClipboardSequenceNumber();
         await ActivateTargetAsync(ctx);
+        if (_generation != g) return;
         Native.SendCtrlV();
         await Task.Delay(ctx.S.PasteRestoreDelayMs);
+        if (_generation != g) return;
         Restore(ctx, prev, seq);
     }
 
@@ -54,6 +61,7 @@ public static class Paster
     {
         var paths = pathsText.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (paths.Length == 0) return;
+        var g = ++_generation;
         ctx.HidePanels();
         var prev = Snapshot();
         ctx.SuppressClipboard();
@@ -68,13 +76,16 @@ public static class Paster
         catch (Exception e) { Log.Error("clipboard set files", e); return; }
         var seq = Native.GetClipboardSequenceNumber();
         await ActivateTargetAsync(ctx);
+        if (_generation != g) return;
         Native.SendCtrlV();
         await Task.Delay(ctx.S.PasteRestoreDelayMs);
+        if (_generation != g) return;
         Restore(ctx, prev, seq);
     }
 
     static async Task PasteImageAsync(AppContext ctx, Bitmap bmp)
     {
+        var g = ++_generation;
         ctx.HidePanels();
         var prev = Snapshot();
         ctx.SuppressClipboard();
@@ -87,8 +98,10 @@ public static class Paster
         catch (Exception e) { Log.Error("clipboard set image", e); return; }
         var seq = Native.GetClipboardSequenceNumber();
         await ActivateTargetAsync(ctx);
+        if (_generation != g) return;
         Native.SendCtrlV();
         await Task.Delay(ctx.S.PasteRestoreDelayMs);
+        if (_generation != g) return;
         Restore(ctx, prev, seq);
     }
 

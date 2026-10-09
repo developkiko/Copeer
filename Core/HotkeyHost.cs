@@ -9,6 +9,11 @@ public class HotkeyHost : Form
     public Action<int>? Hotkey;
     public Action? ClipboardChanged;
 
+    // после падения/перезапуска explorer.exe иконка в трее пропадает — шлём сигнал вернуть
+    public Action? TaskbarRecreated;
+
+    readonly uint _taskbarCreated;
+
     public HotkeyHost()
     {
         FormBorderStyle = FormBorderStyle.None;
@@ -18,6 +23,7 @@ public class HotkeyHost : Form
         Size = new Size(1, 1);
         Opacity = 0;
         Text = "Copeer host";
+        _taskbarCreated = Native.RegisterWindowMessage("TaskbarCreated");
     }
 
     protected override bool ShowWithoutActivation => true;
@@ -45,6 +51,11 @@ public class HotkeyHost : Form
         {
             // откладываем чтение буфера, чтобы не держать его открытым внутри уведомления
             BeginInvoke(() => { try { ClipboardChanged?.Invoke(); } catch { } });
+            return;
+        }
+        if (_taskbarCreated != 0 && m.Msg == (int)_taskbarCreated)
+        {
+            TaskbarRecreated?.Invoke();
             return;
         }
         base.WndProc(ref m);

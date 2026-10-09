@@ -21,6 +21,7 @@ class HistoryPanel : Form
         BackColor = Theme.Back;
         KeyPreview = true;
         DoubleBuffered = true;
+        AutoScaleMode = AutoScaleMode.Dpi; // не «мурашиться» на 125–150% масштабе
         Size = new Size(430, 520);
 
         var top = new Panel { Dock = DockStyle.Top, Height = 46, BackColor = Theme.Back, Padding = new Padding(10, 8, 10, 6) };
@@ -62,6 +63,7 @@ class HistoryPanel : Form
             IntegralHeight = false
         };
         _list.DrawItem += List_DrawItem;
+        _list.HandleCreated += (s, e) => Native.ScrollbarTheme(_list.Handle);
         _list.DoubleClick += (s, e) => PasteSelected();
         _list.KeyDown += (s, e) =>
         {
@@ -162,6 +164,8 @@ class HistoryPanel : Form
         Paster.Paste(_c, _view[_list.SelectedIndex]);
     }
 
+    static readonly Font TsFont = new("Segoe UI", 7.5f);
+
     void List_DrawItem(object? s, DrawItemEventArgs e)
     {
         if (e.Index < 0) return;
@@ -176,7 +180,7 @@ class HistoryPanel : Form
         {
             var thumb = GetThumb(it);
             if (thumb != null) e.Graphics.DrawImage(thumb, e.Bounds.X + 8, e.Bounds.Y + 4, 48, 32);
-            var rect = new Rectangle(e.Bounds.X + 64, e.Bounds.Y, e.Bounds.Width - 74, e.Bounds.Height);
+            var rect = new Rectangle(e.Bounds.X + 64, e.Bounds.Y, e.Bounds.Width - 74 - 120, e.Bounds.Height);
             using var f = new Font("Segoe UI", 9f);
             TextRenderer.DrawText(e.Graphics, $"Изображение {it.W}×{it.H}", f, rect,
                 Theme.TextDim, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
@@ -195,10 +199,19 @@ class HistoryPanel : Form
             {
                 text = it.Text.Replace("\r", "").Replace("\n", " ⏎ ");
             }
-            var rect = new Rectangle(e.Bounds.X + 10, e.Bounds.Y, e.Bounds.Width - 20, e.Bounds.Height);
+            var rect = new Rectangle(e.Bounds.X + 10, e.Bounds.Y, e.Bounds.Width - 20 - 124, e.Bounds.Height);
             TextRenderer.DrawText(e.Graphics, text, Font, rect, Theme.Text,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         }
+
+        // дата и время записи в правом углу — на полупрозрачной пелене,
+        // чтобы читались на любом фоне (картинки, выделение, светлая тема)
+        var tsRect = new Rectangle(e.Bounds.Right - 126, e.Bounds.Bottom - 19, 120, 17);
+        using (var veil = new SolidBrush(Color.FromArgb(sel ? 150 : 115, 0, 0, 0)))
+            e.Graphics.FillRectangle(veil, tsRect);
+        TextRenderer.DrawText(e.Graphics, it.Ts.ToString("ddd dd.MM.yy HH:mm"), TsFont, tsRect,
+            Color.FromArgb(235, 238, 242),
+            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
     }
 
     Image? GetThumb(Entry it)

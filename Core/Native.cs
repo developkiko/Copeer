@@ -41,6 +41,9 @@ internal static class Native
     [DllImport("user32.dll")]
     public static extern bool DestroyIcon(IntPtr hIcon);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern uint RegisterWindowMessage(string lpString);
+
     [DllImport("user32.dll")]
     public static extern bool GetCursorPos(out POINT p);
 
@@ -50,6 +53,9 @@ internal static class Native
     [DllImport("dwmapi.dll")]
     static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
+    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+    static extern int SetWindowTheme(IntPtr hWnd, string? subAppName, string? subIdList);
+
     [StructLayout(LayoutKind.Sequential)]
     public struct POINT { public int X, Y; }
 
@@ -58,6 +64,12 @@ internal static class Native
     {
         int on = 1;
         DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, 4);
+    }
+
+    /// <summary>Скроллбары под тему окна: тёмные в dark-режиме (Windows 10 1809+).</summary>
+    public static void ScrollbarTheme(IntPtr hwnd)
+    {
+        SetWindowTheme(hwnd, Theme.Light ? "Explorer" : "DarkMode_Explorer", null);
     }
 
     /// <summary>Эмуляция Ctrl+V в активное окно.</summary>

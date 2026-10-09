@@ -30,6 +30,7 @@ class SnipOverlay : Form
         MouseDown += (s, e) =>
         {
             if (e.Button == MouseButtons.Left) { _drag = true; _start = e.Location; _sel = Rectangle.Empty; }
+            else if (e.Button == MouseButtons.Right) Cancel(); // отмена без клавиатуры
         };
         MouseMove += (s, e) =>
         {

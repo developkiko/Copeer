@@ -19,6 +19,18 @@ public class Settings
     public string Theme { get; set; } = "dark";           // dark | light
     public bool Autostart { get; set; } = false;          // зеркало реестра, источник правды — Autostart.Enabled
 
+    // OCR после скриншота: "" (выключено) | "windows" (офлайн) | "gcv" (Google Cloud Vision, нужен ключ)
+    public string OcrEngine { get; set; } = "";
+    public string OcrGcvKey { get; set; } = "";
+
+    // PrintScreen (с любыми модификаторами) открывает скриншот Copeer вместо системного
+    public bool InterceptPrintScreen { get; set; } = true;
+
+    // плашка после снимка: секунд до скрытия, когда курсор не на ней.
+    // 0 — скрыть сразу, -1 — висит, пока пользователь не закроет
+    public int SnipToastTimeoutSec { get; set; } = 30;
+    public bool SnipToastRememberTimeout { get; set; } = true;
+
     public static string AppDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Copeer");
     public static string SettingsPath => Path.Combine(AppDir, "settings.json");

@@ -20,10 +20,12 @@ class TranslatorForm : Form
         _c = c;
         Text = "Copeer — переводчик (Neurooo)";
         StartPosition = FormStartPosition.Manual;
+        TopMost = true; // не теряется за проводником и другими окнами
         Size = new Size(560, 480);
         BackColor = Theme.Back;
         ForeColor = Theme.Text;
         Font = new Font("Segoe UI", 9.5f);
+        AutoScaleMode = AutoScaleMode.Dpi;
         KeyPreview = true;
         KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) Hide(); };
 
@@ -47,6 +49,7 @@ class TranslatorForm : Form
             BorderStyle = BorderStyle.FixedSingle,
             AcceptsReturn = true
         };
+        _src.HandleCreated += (s, e) => Native.ScrollbarTheme(_src.Handle);
         _src.KeyDown += (s, e) =>
         {
             if (e.Control && e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; RunTranslate(); }
@@ -117,6 +120,7 @@ class TranslatorForm : Form
             ForeColor = Theme.Text,
             BorderStyle = BorderStyle.FixedSingle
         };
+        _dst.HandleCreated += (s, e) => Native.ScrollbarTheme(_dst.Handle);
         Controls.Add(_dst);
 
         var copy = MakeButton("Копировать", new Point(14, 390), new Size(120, 30));

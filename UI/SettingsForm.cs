@@ -23,6 +23,11 @@ class SettingsForm : Form
     readonly CheckBox _leavePasted;
     readonly ComboBox _position;
     readonly ComboBox _theme;
+    readonly ComboBox _ocrEngine;
+    readonly TextBox _gcvKey;
+    readonly CheckBox _chkPrint;
+    readonly NumericUpDown _toastTime;
+    readonly CheckBox _rememberTimeout;
     readonly CheckBox _autostart;
     bool _busy;
     bool _saved;
@@ -35,8 +40,9 @@ class SettingsForm : Form
         _c = c;
         Text = "Copeer — настройки";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(560, 640);
+        ClientSize = new Size(560, 848);
         Font = UiFont;
+        AutoScaleMode = AutoScaleMode.Dpi;
         KeyPreview = true;
         KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) Close(); };
         FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -223,16 +229,90 @@ class SettingsForm : Form
         _theme.SelectedIndexChanged += (s, e) => PreviewTheme();
         Controls.Add(_theme);
 
-        Controls.Add(Section("СИСТЕМА", 494));
+        Controls.Add(Section("РАСПОЗНАВАНИЕ ТЕКСТА (OCR)", 494));
 
-        _autostart = MakeCheck("Автозапуск с Windows", 14, 524, Autostart.Enabled);
+        Controls.Add(L("Движок", 14, 524));
+        _ocrEngine = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Location = new Point(300, 521),
+            Size = new Size(220, 26),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Field,
+            ForeColor = Theme.Text
+        };
+        _ocrEngine.Items.Add("Выключено");
+        _ocrEngine.Items.Add("Встроенный (Windows, офлайн)");
+        _ocrEngine.Items.Add("Google Cloud Vision");
+        _ocrEngine.SelectedIndex = _c.S.OcrEngine switch
+        {
+            "windows" => 1,
+            "gcv" => 2,
+            _ => 0
+        };
+        Controls.Add(_ocrEngine);
+
+        Controls.Add(L("Ключ Vision API", 14, 556));
+        _gcvKey = new TextBox
+        {
+            Location = new Point(300, 553),
+            Size = new Size(220, 25),
+            UseSystemPasswordChar = true,
+            BackColor = Theme.Field,
+            ForeColor = Theme.Text,
+            BorderStyle = BorderStyle.FixedSingle,
+            Text = _c.S.OcrGcvKey
+        };
+        Controls.Add(_gcvKey);
+
+        Controls.Add(new Label
+        {
+            AutoSize = true,
+            Location = new Point(14, 586),
+            ForeColor = Theme.TextDim,
+            Text = "Ключ: console.cloud.google.com → Cloud Vision API → Credentials (1000 запросов/мес бесплатно)"
+        });
+
+        Controls.Add(Section("СКРИНШОТ И ПЛАШКА", 614));
+
+        _chkPrint = MakeCheck("PrintScreen (с Shift/Alt/Ctrl) открывает скриншот Copeer", 14, 644, _c.S.InterceptPrintScreen);
+        Controls.Add(_chkPrint);
+
+        Controls.Add(L("Плашка после снимка: секунд до скрытия", 14, 676));
+        _toastTime = new NumericUpDown
+        {
+            Location = new Point(300, 673),
+            Size = new Size(90, 25),
+            Minimum = -1,
+            Maximum = 3600,
+            BackColor = Theme.Field,
+            ForeColor = Theme.Text,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+        _toastTime.Value = _c.S.SnipToastTimeoutSec;
+        Controls.Add(_toastTime);
+
+        _rememberTimeout = MakeCheck("запомнить", 400, 675, _c.S.SnipToastRememberTimeout);
+        Controls.Add(_rememberTimeout);
+
+        Controls.Add(new Label
+        {
+            AutoSize = true,
+            Location = new Point(14, 706),
+            ForeColor = Theme.TextDim,
+            Text = "0 — скрыть сразу после ухода курсора, −1 — пока не закрыть крестиком; плашку можно таскать мышью"
+        });
+
+        Controls.Add(Section("СИСТЕМА", 736));
+
+        _autostart = MakeCheck("Автозапуск с Windows", 14, 766, Autostart.Enabled);
         Controls.Add(_autostart);
 
-        var save = MakeButton("Сохранить", new Point(14, 578), new Size(130, 32), accent: true);
+        var save = MakeButton("Сохранить", new Point(14, 800), new Size(130, 32), accent: true);
         save.Click += (s, e) => Save();
         Controls.Add(save);
 
-        var cancel = MakeButton("Отмена", new Point(152, 578), new Size(100, 32));
+        var cancel = MakeButton("Отмена", new Point(152, 800), new Size(100, 32));
         cancel.Click += (s, e) => Close();
         Controls.Add(cancel);
 
@@ -262,17 +342,17 @@ class SettingsForm : Form
                 lbl.ForeColor = Theme.Text;
         _keyStatus.ForeColor = Theme.TextDim;
         _key.BackColor = Theme.Field; _key.ForeColor = Theme.Text;
-        foreach (var cb in new[] { _lang, _engine, _position, _theme })
+        foreach (var cb in new[] { _lang, _engine, _position, _theme, _ocrEngine })
         {
             cb.BackColor = Theme.Field;
             cb.ForeColor = Theme.Text;
         }
-        foreach (var n in new[] { _limit, _maxLen, _delay })
+        foreach (var n in new[] { _limit, _maxLen, _delay, _toastTime })
         {
             n.BackColor = Theme.Field;
             n.ForeColor = Theme.Text;
         }
-        foreach (var chk in new[] { _captureImages, _captureFiles, _leavePasted, _autostart })
+        foreach (var chk in new[] { _captureImages, _captureFiles, _leavePasted, _autostart, _chkPrint, _rememberTimeout })
             chk.ForeColor = Theme.Text;
     }
 
@@ -392,8 +472,15 @@ class SettingsForm : Form
         _c.S.LeavePastedInClipboard = _leavePasted.Checked;
         _c.S.PanelPosition = _position.SelectedIndex == 1 ? "center" : "cursor";
         _c.S.Theme = _theme.SelectedIndex == 1 ? "light" : "dark";
+        _c.S.OcrEngine = _ocrEngine.SelectedIndex switch { 1 => "windows", 2 => "gcv", _ => "" };
+        _c.S.OcrGcvKey = _gcvKey.Text.Trim();
+        _c.S.InterceptPrintScreen = _chkPrint.Checked;
+        _c.S.SnipToastRememberTimeout = _rememberTimeout.Checked;
+        // без галочки «запомнить» время живёт только до перезапуска
+        if (_rememberTimeout.Checked) _c.S.SnipToastTimeoutSec = (int)_toastTime.Value;
         _c.S.Autostart = _autostart.Checked;
         Autostart.Set(_autostart.Checked);
+        _c.ApplyHookSettings();
         _c.S.Save();
 
         Log.Info($"settings saved (theme={_c.S.Theme}, engine='{_c.S.Engine}', autostart={_c.S.Autostart})");
