@@ -252,9 +252,24 @@ class HistoryPanel : Form
         _search.Text = "";
         Repopulate();
 
-        int h = Math.Max(220, Math.Min(520, 46 + _view.Count * _list.ItemHeight + 24 + 60));
+        // разворачиваем список на максимум места от курсора (до 760px),
+        // низ панели — прямо у курсора: последний видимый пункт кликается сразу,
+        // без прокрутки. Сторону выбираем ту, где больше места (обычно над курсором)
+        var p = Cursor.Position;
+        var wa = Screen.FromPoint(p).WorkingArea;
+        int content = 46 + _view.Count * _list.ItemHeight + 24 + 10;
+        int spaceAbove = p.Y - wa.Top - 14;
+        int spaceBelow = wa.Bottom - p.Y - 14;
+        bool above = spaceAbove >= spaceBelow;
+        int space = Math.Max(220, above ? spaceAbove : spaceBelow);
+        int h = Math.Max(220, Math.Min(Math.Min(760, content), space));
         Size = new Size(Width, h);
-        Ui.PlacePopup(this, _c.S);
+
+        int x = p.X + 10;
+        if (x + Width > wa.Right) x = wa.Right - Width - 4;
+        int y = above ? p.Y - h - 8 : p.Y + 8;
+        if (y < wa.Top) y = wa.Top;
+        Location = new Point(x, y);
 
         _leftAt = null;
         Show();
