@@ -18,7 +18,8 @@ class EmojiPanel : Form
     static readonly string EmojiDir = Path.Combine(Application.StartupPath, "emoji");
     readonly ToolTip _tip = new();
     string _cat = "Все";
-    DateTime _shownAt;
+    readonly System.Windows.Forms.Timer _life = new() { Interval = 250 };
+    DateTime? _leftAt;
 
     public EmojiPanel(AppContext c)
     {
@@ -142,15 +143,42 @@ class EmojiPanel : Form
         Controls.Add(_chips);
         Controls.Add(top);
 
-        Deactivate += (s, e) => { if ((DateTime.UtcNow - _shownAt).TotalMilliseconds > 300) Hide(); };
+        // правый клик — закрыть (для режима «пока не закроют»)
+        MouseClick += (s, e) => { if (e.Button == MouseButtons.Right) HideLive(); };
         KeyDown += (s, e) =>
         {
-            if (e.KeyCode == Keys.Escape) { Hide(); return; }
+            if (e.KeyCode == Keys.Escape) { HideLive(); return; }
             // стрелки между кнопками сетки, когда фокус на одной из них
             if (ActiveControl is Button && _grid.Contains(ActiveControl))
                 MoveGridFocus(e);
         };
+        _life.Tick += (s, e) => TickLife();
         MarkChips();
+    }
+
+    // видимость: пока фокус или курсор на панели — живём; потеряли и то и другое —
+    // отсчёт SnipToastTimeoutSec (0 — скрыть сразу, -1 — пока не закроют)
+    void TickLife()
+    {
+        int t = _c.S.SnipToastTimeoutSec;
+        if (t < 0) return;
+        if (ContainsFocus || Bounds.Contains(Cursor.Position)) { _leftAt = null; return; }
+        if (t == 0) { HideLive(); return; }
+        _leftAt ??= DateTime.UtcNow;
+        if ((DateTime.UtcNow - _leftAt.Value).TotalSeconds >= t) HideLive();
+    }
+
+    void HideLive()
+    {
+        _leftAt = null;
+        _life.Stop();
+        Hide();
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (!Visible) _life.Stop();
     }
 
     protected override CreateParams CreateParams
@@ -167,11 +195,12 @@ class EmojiPanel : Form
 
         Ui.PlacePopup(this, _c.S);
 
-        _shownAt = DateTime.UtcNow;
+        _leftAt = null;
         Show();
         Activate();
         _search.Focus();
         Ui.RetryFocus(this);
+        _life.Start();
     }
 
     void MoveGridFocus(KeyEventArgs e)

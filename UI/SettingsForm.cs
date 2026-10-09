@@ -325,7 +325,7 @@ class SettingsForm : Form
         _chkPrint = MakeCheck("PrintScreen (с Shift/Alt/Ctrl) открывает скриншот Copeer", 14, 644, _c.S.InterceptPrintScreen);
         Controls.Add(_chkPrint);
 
-        Controls.Add(L("Плашка после снимка: секунд до скрытия", 14, 676));
+        Controls.Add(L("Панели и плашка: секунд до скрытия", 14, 676));
         _toastTime = new NumericUpDown
         {
             Location = new Point(300, 673),
@@ -347,7 +347,7 @@ class SettingsForm : Form
             AutoSize = true,
             Location = new Point(14, 706),
             ForeColor = Theme.TextDim,
-            Text = "0 — скрыть сразу после ухода курсора, −1 — пока не закрыть крестиком; плашку можно таскать мышью"
+            Text = "Пока курсор или фокус на окне — оно не исчезает. 0 — скрыть сразу, −1 — пока не закрыть (Esc/правый клик/✕). Плашку можно таскать мышью"
         });
 
         Controls.Add(Section("СИСТЕМА", 736));

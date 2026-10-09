@@ -13,6 +13,8 @@ class HistoryPanel : Form
     readonly Label _hint = null!;
     readonly List<Entry> _view = new();
     readonly Dictionary<string, Image> _thumbs = new();
+    readonly System.Windows.Forms.Timer _life = new() { Interval = 250 };
+    DateTime? _leftAt;
 
     public HistoryPanel(AppContext c)
     {
@@ -100,8 +102,7 @@ class HistoryPanel : Form
         _list.DoubleClick += (s, e) => PasteSelected();
         _list.KeyDown += (s, e) =>
         {
-            if (e.KeyCode == Keys.Enter) { e.Handled = e.SuppressKeyPress = true; PasteSelected(); }
-            else if (e.KeyCode == Keys.Delete && _list.SelectedIndex >= 0)
+            if (e.KeyCode == Keys.Delete && _list.SelectedIndex >= 0)
             {
                 // Changed перестроит список и почистит миниатюру
                 _c.Store.Remove(_view[_list.SelectedIndex]);
@@ -127,15 +128,57 @@ class HistoryPanel : Form
         _list.SelectedIndexChanged += (s, e) => UpdateActions();
         UpdateActions();
 
-        Deactivate += (s, e) => { if ((DateTime.UtcNow - _shownAt).TotalMilliseconds > 300) Hide(); };
-        KeyDown += (s, e) =>
-        {
-            if (e.KeyCode == Keys.Escape) { Hide(); return; }
-            if (ActiveControl == _search) return; // в поиске печатают — L/T не перехватываем
+        KeyDown += (s, e) =>        {
+            if (e.KeyCode == Keys.Escape) { HideLive(); return; }
+            if (ActiveControl == _search)
+            {
+                // Enter в поиске = вставить верхний результат
+                if (e.KeyCode == Keys.Enter && Selected != null)
+                {
+                    e.Handled = e.SuppressKeyPress = true;
+                    PasteSelected();
+                }
+                return; // в поиске печатают — L/T не перехватываем
+            }
+            if (e.KeyCode == Keys.Enter && Selected != null)
+            {
+                e.Handled = e.SuppressKeyPress = true;
+                PasteSelected();
+                return;
+            }
             if (e.KeyCode == Keys.L && _btnOcr.Enabled) { e.Handled = e.SuppressKeyPress = true; _ = OcrSelectedAsync(); }
             if (e.KeyCode == Keys.T && _btnTr.Enabled) { e.Handled = e.SuppressKeyPress = true; TranslateSelected(); }
         };
+        // правый клик — закрыть (для режима «пока не закроют»)
+        MouseClick += (s, e) => { if (e.Button == MouseButtons.Right) HideLive(); };
+        _list.MouseClick += (s, e) => { if (e.Button == MouseButtons.Right) HideLive(); };
+        _life.Tick += (s, e) => TickLife();
         _c.Store.Changed += OnStoreChanged;
+    }
+
+    // видимость: пока фокус или курсор на панели — живём; потеряли и то и другое —
+    // отсчёт SnipToastTimeoutSec (0 — скрыть сразу, -1 — пока не закроют)
+    void TickLife()
+    {
+        int t = _c.S.SnipToastTimeoutSec;
+        if (t < 0) return;
+        if (ContainsFocus || Bounds.Contains(Cursor.Position)) { _leftAt = null; return; }
+        if (t == 0) { HideLive(); return; }
+        _leftAt ??= DateTime.UtcNow;
+        if ((DateTime.UtcNow - _leftAt.Value).TotalSeconds >= t) HideLive();
+    }
+
+    void HideLive()
+    {
+        _leftAt = null;
+        _life.Stop();
+        Hide();
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (!Visible) _life.Stop();
     }
 
     Entry? Selected => _list.SelectedIndex >= 0 && _list.SelectedIndex < _view.Count ? _view[_list.SelectedIndex] : null;
@@ -173,8 +216,6 @@ class HistoryPanel : Form
         if (Selected is { Kind: EntryKind.Text } t && t.Text.Length > 0)
             _c.ShowTranslatorWithText(t.Text);
     }
-
-    DateTime _shownAt;
 
     // новый элемент появился, пока панель открыта — перестраиваем, сохраняя выделение
     void OnStoreChanged()
@@ -215,11 +256,12 @@ class HistoryPanel : Form
         Size = new Size(Width, h);
         Ui.PlacePopup(this, _c.S);
 
-        _shownAt = DateTime.UtcNow;
+        _leftAt = null;
         Show();
         Activate();
         _search.Focus();
         Ui.RetryFocus(this);
+        _life.Start();
     }
 
     void Repopulate()
