@@ -27,6 +27,7 @@ class SettingsForm : Form
     readonly TextBox _gcvKey;
     readonly ComboBox _hideMode;
     readonly NumericUpDown _hideSec;
+    readonly CheckBox _grabSel;
     readonly CheckBox _autostart;
     readonly ToolTip _tips = new();
     readonly List<Button> _helpButtons = new();
@@ -354,13 +355,9 @@ class SettingsForm : Form
         Controls.Add(secBox);
         modeBox.SelectedIndexChanged += (s, e) => secBox.Enabled = modeBox.SelectedIndex == 1;
 
-        Controls.Add(new Label
-        {
-            AutoSize = true,
-            Location = new Point(14, 706),
-            ForeColor = Theme.TextDim,
-            Text = "«Сразу» — панель исчезает, как только теряет и фокус, и курсор; «Не скрывать» — до Esc / правого клика / «Отмены»"
-        });
+        _grabSel = MakeCheck("Win+Shift+W копирует выделенное в активном окне (Ctrl+C)", 14, 706, _c.S.TranslatorGrabSelection);
+        Controls.Add(_grabSel);
+        _tips.SetToolTip(modeBox, "«Сразу» — панель исчезает, как только теряет и фокус, и курсор; «Не скрывать» — до Esc / правого клика / «Отмены»");
 
         Controls.Add(Section("СИСТЕМА", 736));
 
@@ -411,7 +408,7 @@ class SettingsForm : Form
             n.BackColor = Theme.Field;
             n.ForeColor = Theme.Text;
         }
-        foreach (var chk in new[] { _captureImages, _captureFiles, _leavePasted, _autostart })
+        foreach (var chk in new[] { _captureImages, _captureFiles, _leavePasted, _grabSel, _autostart })
             chk.ForeColor = Theme.Text;
         foreach (var b in _helpButtons)
         {
@@ -546,6 +543,7 @@ class SettingsForm : Form
         _c.S.OcrGcvKey = _gcvKey.Text.Trim();
         _c.S.PanelHideMode = _hideMode.SelectedIndex switch { 1 => "timer", 2 => "never", _ => "focus" };
         _c.S.PanelHideSec = (int)_hideSec.Value;
+        _c.S.TranslatorGrabSelection = _grabSel.Checked;
         _c.S.Autostart = _autostart.Checked;
         Autostart.Set(_autostart.Checked);
         _c.S.Save();

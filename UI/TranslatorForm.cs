@@ -2,14 +2,15 @@ using Copeer.Core;
 
 namespace Copeer.UI;
 
-/// <summary>Окно переводчика на Neurooo API (Win+T). Открывается с текстом из буфера обмена.</summary>
+/// <summary>Окно переводчика на Neurooo API (Win+Shift+W). Открывается с выделенным текстом или из буфера обмена.</summary>
 class TranslatorForm : Form
 {
     readonly AppContext _c;
     readonly NeuroooClient _api = new();
     readonly TextBox _src = null!;
     readonly TextBox _dst = null!;
-    readonly ComboBox _lang = null!;
+    readonly ComboBox _srcLang = null!; // язык исходного текста (по умолчанию — автоопределение, не запоминается)
+    readonly ComboBox _dstLang = null!; // язык перевода — запоминается в настройках
     readonly ComboBox _engine = null!;
     readonly Label _status = null!;
     readonly Button _go = null!;
@@ -33,11 +34,11 @@ class TranslatorForm : Form
         KeyPreview = true;
         KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape) Hide(); };
 
-        Label L(string t, int y) => new Label
+        Label L(string t, int y, int x = 14) => new Label
         {
             Text = t,
             AutoSize = true,
-            Location = new Point(14, y),
+            Location = new Point(x, y),
             ForeColor = Theme.TextDim
         };
 
@@ -47,7 +48,7 @@ class TranslatorForm : Form
             Multiline = true,
             ScrollBars = ScrollBars.Vertical,
             Location = new Point(14, 32),
-            Size = new Size(518, 96),
+            Size = new Size(518, 88),
             BackColor = Theme.Field,
             ForeColor = Theme.Text,
             BorderStyle = BorderStyle.FixedSingle,
@@ -60,31 +61,49 @@ class TranslatorForm : Form
         };
         Controls.Add(_src);
 
-        _lang = new ComboBox
+        Controls.Add(L("Исходный язык", 124));
+        _srcLang = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Location = new Point(14, 140),
-            Size = new Size(170, 26),
+            Location = new Point(14, 142),
+            Size = new Size(240, 26),
             FlatStyle = FlatStyle.Flat,
             BackColor = Theme.Field,
             ForeColor = Theme.Text
         };
-        foreach (var l in Langs.List) _lang.Items.Add(l.Name);
-        var defIdx = Langs.IndexOf(_c.S.TargetLanguage);
-        _lang.SelectedIndex = defIdx >= 0 ? defIdx : 1;
-        _lang.SelectedIndexChanged += (s, e) =>
+        foreach (var l in Langs.List) _srcLang.Items.Add(l.Name);
+        _srcLang.SelectedIndex = 0; // автоопределение — исходный язык при каждом открытии сбрасывается
+        Ui.ThemedCombo(_srcLang);
+        Controls.Add(_srcLang);
+
+        Controls.Add(L("Язык перевода", 124, 270));
+        _dstLang = new ComboBox
         {
-            _c.S.TargetLanguage = Langs.List[_lang.SelectedIndex].Code;
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Location = new Point(270, 142),
+            Size = new Size(240, 26),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Field,
+            ForeColor = Theme.Text
+        };
+        // автоопределения для целевого языка не бывает — его API не принимает
+        foreach (var l in Langs.List.Skip(1)) _dstLang.Items.Add(l.Name);
+        var defIdx = Langs.IndexOf(_c.S.TargetLanguage) - 1;
+        _dstLang.SelectedIndex = defIdx >= 0 ? defIdx : 0;
+        _dstLang.SelectedIndexChanged += (s, e) =>
+        {
+            _c.S.TargetLanguage = Langs.List[_dstLang.SelectedIndex + 1].Code;
             _c.S.Save();
         };
-        Ui.ThemedCombo(_lang);
-        Controls.Add(_lang);
+        Ui.ThemedCombo(_dstLang);
+        Controls.Add(_dstLang);
 
+        Controls.Add(L("Движок", 174));
         _engine = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Location = new Point(196, 140),
-            Size = new Size(192, 26),
+            Location = new Point(14, 192),
+            Size = new Size(240, 26),
             FlatStyle = FlatStyle.Flat,
             BackColor = Theme.Field,
             ForeColor = Theme.Text
@@ -104,8 +123,8 @@ class TranslatorForm : Form
         _go = new Button
         {
             Text = "Перевести",
-            Location = new Point(400, 139),
-            Size = new Size(132, 28),
+            Location = new Point(270, 191),
+            Size = new Size(150, 30),
             FlatStyle = FlatStyle.Flat,
             BackColor = Theme.Accent,
             ForeColor = Color.White
@@ -114,14 +133,14 @@ class TranslatorForm : Form
         _go.Click += (s, e) => RunTranslate();
         Controls.Add(_go);
 
-        Controls.Add(L("Результат", 178));
+        Controls.Add(L("Результат", 230));
         _dst = new TextBox
         {
             Multiline = true,
             ScrollBars = ScrollBars.Vertical,
             ReadOnly = true,
-            Location = new Point(14, 198),
-            Size = new Size(518, 180),
+            Location = new Point(14, 248),
+            Size = new Size(518, 148),
             BackColor = Theme.Panel,
             ForeColor = Theme.Text,
             BorderStyle = BorderStyle.FixedSingle
@@ -130,7 +149,7 @@ class TranslatorForm : Form
         Controls.Add(_dst);
 
         // кнопки: Копировать / Вставить / В файл / Отмена — пусто = disabled
-        _btnCopy = MakeButton("Копировать", new Point(14, 392), new Size(110, 30));
+        _btnCopy = MakeButton("Копировать", new Point(14, 406), new Size(110, 30));
         _btnCopy.Click += (s, e) =>
         {
             if (_dst.Text.Length == 0) return;
@@ -140,11 +159,11 @@ class TranslatorForm : Form
         };
         Controls.Add(_btnCopy);
 
-        _btnInsert = MakeButton("Вставить в окно", new Point(130, 392), new Size(150, 30));
+        _btnInsert = MakeButton("Вставить в окно", new Point(130, 406), new Size(150, 30));
         _btnInsert.Click += (s, e) => { if (_dst.Text.Length > 0) Paster.PasteText(_c, _dst.Text); };
         Controls.Add(_btnInsert);
 
-        _btnFile = MakeButton("В файл", new Point(286, 392), new Size(100, 30));
+        _btnFile = MakeButton("В файл", new Point(286, 406), new Size(100, 30));
         _btnFile.Click += (s, e) =>
         {
             // сохраняем перевод, а если его ещё нет — исходный текст
@@ -163,13 +182,13 @@ class TranslatorForm : Form
         };
         Controls.Add(_btnFile);
 
-        var cancel = MakeButton("Отмена", new Point(392, 392), new Size(110, 30));
+        var cancel = MakeButton("Отмена", new Point(392, 406), new Size(110, 30));
         cancel.Click += (s, e) => Hide();
         Controls.Add(cancel);
 
         _status = new Label
         {
-            Location = new Point(14, 428),
+            Location = new Point(14, 442),
             AutoSize = true,
             ForeColor = Theme.TextDim
         };
@@ -212,12 +231,72 @@ class TranslatorForm : Form
         Native.DarkTitleBar(Handle);
     }
 
-    public void OpenWithClipboard()
+    /// <summary>
+    /// Хоткей Win+Shift+W: пытаемся забрать выделенный текст из активного окна
+    /// (шлём Ctrl+C), если выделения нет — переводим то, что в буфере.
+    /// </summary>
+    public async void OpenWithSelectionAsync()
     {
-        var clip = TryClipboardText();
+        string? clip;
+        if (_c.S.TranslatorGrabSelection)
+            clip = await GrabSelectionTextAsync();
+        else
+            clip = TryClipboardText();
+
+        FillFromClipboard(clip);
+    }
+
+    // выделяешь текст → жмёшь Win+Shift+W → Copeer шлёт Ctrl+C в активное окно и забирает выделение;
+    // если скопировать было нечего — работает прежний буфер обмена
+    async Task<string?> GrabSelectionTextAsync()
+    {
+        try
+        {
+            IDataObject? prev = null;
+            string? prevText = null;
+            try
+            {
+                prev = Clipboard.GetDataObject();
+                if (prev != null && prev.GetDataPresent(DataFormats.Text))
+                    prevText = prev.GetData(DataFormats.Text) as string;
+            }
+            catch { }
+
+            await Task.Delay(150); // даём отпустить клавиши хоткея
+            var seq0 = Native.GetClipboardSequenceNumber();
+            Native.SendCtrlC();
+            await Task.Delay(300);
+            var seq1 = Native.GetClipboardSequenceNumber();
+
+            if (seq1 == seq0) return prevText; // Ctrl+C ничего не скопировал — прежний буфер
+
+            var text = TryClipboardText();
+            if (text == null)
+            {
+                // в буфер попала картинка/файлы — возвращаем прежнее содержимое
+                if (prev != null)
+                {
+                    _c.SuppressClipboard();
+                    try { Clipboard.SetDataObject(prev, true); } catch { }
+                }
+                return prevText;
+            }
+            return text;
+        }
+        catch (Exception e)
+        {
+            Log.Error("translator grab selection", e);
+            return null;
+        }
+    }
+
+    void FillFromClipboard(string? clip)
+    {
+        _srcLang.SelectedIndex = 0; // исходный язык — каждый раз с автоопределения
+
         if (!string.IsNullOrEmpty(clip))
         {
-            // Win+T всегда означает «перевести то, что в буфере сейчас»;
+            // хоткей всегда означает «перевести то, что сейчас в источнике»;
             // повторный вызов с тем же текстом не гоняет API повторно
             var text = clip.Length > 12_000 ? clip[..12_000] : clip;
             var changed = text != _src.Text;
@@ -246,9 +325,10 @@ class TranslatorForm : Form
         _src.SelectionStart = _src.TextLength;
     }
 
-    /// <summary>Открыть с заданным текстом (из истории буфера) и сразу перевести.</summary>
+    /// <summary>Открыть с заданным текстом (из истории буфера, окна распознавания) и сразу перевести.</summary>
     public void OpenWithText(string text)
     {
+        _srcLang.SelectedIndex = 0;
         _src.Text = text.Length > 12_000 ? text[..12_000] : text;
         _dst.Text = "";
         _status.Text = "";
@@ -297,14 +377,15 @@ class TranslatorForm : Form
         _status.Text = "Перевод…";
         try
         {
-            var srcCode = Langs.List[_lang.SelectedIndex].Code;
+            var srcCode = _srcLang.SelectedIndex > 0 ? Langs.List[_srcLang.SelectedIndex].Code : null;
+            var target = Langs.List[_dstLang.SelectedIndex + 1].Code;
             var (result, detected) = await _api.TranslateAsync(
-                _c.S, text, _c.S.TargetLanguage,
-                sourceLang: srcCode == "auto" ? null : srcCode,
+                _c.S, text, target,
+                sourceLang: srcCode,
                 engine: string.IsNullOrWhiteSpace(_c.S.Engine) ? null : _c.S.Engine);
             _dst.Text = result;
-            var from = srcCode == "auto" && detected.Length > 0 ? detected : srcCode;
-            _status.Text = $"{from} → {_c.S.TargetLanguage} • {text.Length} симв.";
+            var from = srcCode ?? (detected.Length > 0 ? detected : "?");
+            _status.Text = $"{from} → {target} • {text.Length} симв.";
         }
         catch (Exception ex)
         {

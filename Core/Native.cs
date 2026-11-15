@@ -8,7 +8,7 @@ internal static class Native
     public const int WM_CLIPBOARDUPDATE = 0x031D;
 
     public const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_SHIFT = 0x4, MOD_WIN = 0x8;
-    public const uint VK_V = 0x56, VK_T = 0x54, VK_S = 0x53, VK_OEM_PERIOD = 0xBE;
+    public const uint VK_V = 0x56, VK_T = 0x54, VK_S = 0x53, VK_W = 0x57, VK_OEM_PERIOD = 0xBE;
 
     const byte VK_CONTROL = 0x11;
     const uint KEYEVENTF_KEYUP = 0x0002;
@@ -78,6 +78,24 @@ internal static class Native
         keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
         keybd_event((byte)'V', 0, 0, UIntPtr.Zero);
         keybd_event((byte)'V', 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+    }
+
+    const uint VK_SHIFT_U = 0x10, VK_LWIN_U = 0x5B, VK_RWIN_U = 0x5C;
+
+    /// <summary>
+    /// Эмуляция Ctrl+C в активном окно — для захвата выделенного текста по Win+Shift+W.
+    /// Модификаторы (Shift/Win) могли остаться физически зажаты после хоткея —
+    /// шлём им KEYUP, чтобы чужое приложение не увидело Ctrl+Shift+C вместо Ctrl+C.
+    /// </summary>
+    public static void SendCtrlC()
+    {
+        keybd_event((byte)VK_SHIFT_U, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        keybd_event((byte)VK_LWIN_U, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        keybd_event((byte)VK_RWIN_U, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
+        keybd_event((byte)'C', 0, 0, UIntPtr.Zero);
+        keybd_event((byte)'C', 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
         keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 

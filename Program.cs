@@ -62,8 +62,8 @@ public class AppContext : ApplicationContext
         RegisterHotkey(1, Native.MOD_WIN, Native.VK_V, "Win+V (история буфера)");
         RegisterHotkey(2, Native.MOD_WIN, Native.VK_OEM_PERIOD, "Win+. (эмодзи и символы)");
         RegisterHotkey(3, Native.MOD_WIN | Native.MOD_SHIFT, Native.VK_S, "Win+Shift+S (скриншот)");
-        // Win+T держит сама Windows (переключение кнопок панели задач) — переводчик на Win+Shift+T
-        RegisterHotkey(4, Native.MOD_WIN | Native.MOD_SHIFT, Native.VK_T, "Win+Shift+T (переводчик)");
+        // Win+T и Win+Shift+T держит сама Windows (переключение кнопок панели задач) — переводчик на Win+Shift+W
+        RegisterHotkey(4, Native.MOD_WIN | Native.MOD_SHIFT, Native.VK_W, "Win+Shift+W (переводчик)");
 
         // комбинации, которые не удалось занять через RegisterHotKey (держит сама Windows),
         // перехватываем низкоуровневым хуком; обработка уходит из колбэка хука в очередь хоста
@@ -86,7 +86,7 @@ public class AppContext : ApplicationContext
         if (_hotkeyOwned[4]) hook.Skip(KeyboardHook.VK_T);
 
         tray.ShowBalloonTip(4000, "Copeer запущен",
-            "Win+V — история буфера\nWin+. — эмодзи и символы\nWin+Shift+S / PrintScreen — скриншот\nWin+Shift+T — переводчик",
+            "Win+V — история буфера\nWin+. — эмодзи и символы\nWin+Shift+S / PrintScreen — скриншот\nWin+Shift+W — переводчик",
             ToolTipIcon.Info);
     }
 
@@ -163,7 +163,7 @@ public class AppContext : ApplicationContext
         Log.Info("show: translator");
         CapturePasteTarget();
         if (translator == null || translator.IsDisposed) translator = new TranslatorForm(this);
-        translator.OpenWithClipboard();
+        translator.OpenWithSelectionAsync(); // захват выделенного + открытие
     }
 
     /// <summary>
@@ -376,7 +376,7 @@ public class AppContext : ApplicationContext
         Add("История буфера (Win+V)", ShowHistory);
         Add("Эмодзи и символы (Win+.)", ShowEmoji);
         Add("Скриншот (Win+Shift+S)", ShowSnip);
-        Add("Переводчик (Win+Shift+T)", ShowTranslator);
+        Add("Переводчик (Win+Shift+W)", ShowTranslator);
         menu.Items.Add(new ToolStripSeparator());
         Add("Настройки…", ShowSettings);
         Add("Открыть папку данных", () =>

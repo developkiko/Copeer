@@ -6,7 +6,7 @@ namespace Copeer.Core;
 /// <summary>
 /// Низкоуровневый клавиатурный хук (WH_KEYBOARD_LL): перехватывает комбинации,
 /// зарегистрированные самой Windows (Win+. — эмодзи-панель, Win+Shift+S — ножницы,
-/// Win+T — проводник), раньше системной обработки.
+/// Win+Shift+W — задачи панели задач/проводника), раньше системной обработки.
 /// Тяжёлая обработка через Sync выносится из колбэка хука — в колбэке только
 /// проверка и глотание клавиши, иначе Windows сочтёт хук зависшим.
 /// </summary>
@@ -25,7 +25,7 @@ public class KeyboardHook : IDisposable
     const uint VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12;
     const uint VK_LWIN = 0x5B, VK_RWIN = 0x5C;
     const uint VK_SNAPSHOT = 0x2C; // PrintScreen
-    public const uint VK_PERIOD = 0xBE, VK_T = 0x54, VK_S = 0x53, VK_V = 0x56;
+    public const uint VK_PERIOD = 0xBE, VK_T = 0x54, VK_S = 0x53, VK_W = 0x57, VK_V = 0x56;
 
     readonly LowLevelKeyboardProc _proc;
     readonly Action<int> _dispatch;
@@ -129,7 +129,7 @@ public class KeyboardHook : IDisposable
         }
     }
 
-    // базовые комбинации (без Shift) + отдельно Win+Shift+S / Win+Shift+T
+    // базовые комбинации (без Shift) + отдельно Win+Shift+S / Win+Shift+W
     static bool Matches(uint vk)
     {
         if (!Key(VK_LWIN) && !Key(VK_RWIN)) return false;
@@ -142,7 +142,7 @@ public class KeyboardHook : IDisposable
         if (Matches(vk)) return true;
         if (!Key(VK_LWIN) && !Key(VK_RWIN)) return false;
         if (Key(VK_CONTROL) || Key(VK_MENU) || !Key(VK_SHIFT)) return false;
-        return vk is VK_S or VK_T; // Win + Shift + S (скриншот), Win + Shift + T (переводчик)
+        return vk is VK_S or VK_W; // Win + Shift + S (скриншот), Win + Shift + W (переводчик)
     }
 
     static bool Key(uint vk) => (GetAsyncKeyState((int)vk) & 0x8000) != 0;

@@ -7,6 +7,10 @@ public class Settings
     public string NeuroooApiKey { get; set; } = "";
     public string TargetLanguage { get; set; } = "ru";
     public string Engine { get; set; } = "";
+
+    // Win+Shift+W: перед открытием переводчика шлём Ctrl+C в активное окно
+    // и берём выделенный текст (иначе — прежний буфер обмена)
+    public bool TranslatorGrabSelection { get; set; } = true;
     public int HistoryLimit { get; set; } = 500;
     public int PasteRestoreDelayMs { get; set; } = 1500;
     public List<string> RecentSymbols { get; set; } = new();
