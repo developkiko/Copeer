@@ -31,7 +31,6 @@ public class AppContext : ApplicationContext
     EmojiPanel? emoji;
     TranslatorForm? translator;
     SnipOverlay? snip;
-    SnipToast? snipToast;
     KeyboardHook? hook;
 
     DateTime _suppressUntil;
@@ -63,12 +62,12 @@ public class AppContext : ApplicationContext
         RegisterHotkey(1, Native.MOD_WIN, Native.VK_V, "Win+V (история буфера)");
         RegisterHotkey(2, Native.MOD_WIN, Native.VK_OEM_PERIOD, "Win+. (эмодзи и символы)");
         RegisterHotkey(3, Native.MOD_WIN | Native.MOD_SHIFT, Native.VK_S, "Win+Shift+S (скриншот)");
-        RegisterHotkey(4, Native.MOD_WIN, Native.VK_T, "Win+T (переводчик)");
+        // Win+T держит сама Windows (переключение кнопок панели задач) — переводчик на Win+Shift+T
+        RegisterHotkey(4, Native.MOD_WIN | Native.MOD_SHIFT, Native.VK_T, "Win+Shift+T (переводчик)");
 
         // комбинации, которые не удалось занять через RegisterHotKey (держит сама Windows),
         // перехватываем низкоуровневым хуком; обработка уходит из колбэка хука в очередь хоста
         hook = new KeyboardHook { Sync = host };
-        hook.InterceptSnapshot = S.InterceptPrintScreen;
         hook.ComboHit = vk =>
         {
             switch ((uint)vk)
@@ -87,7 +86,7 @@ public class AppContext : ApplicationContext
         if (_hotkeyOwned[4]) hook.Skip(KeyboardHook.VK_T);
 
         tray.ShowBalloonTip(4000, "Copeer запущен",
-            "Win+V — история буфера\nWin+. — эмодзи и символы\nWin+Shift+S — скриншот\nWin+T — переводчик",
+            "Win+V — история буфера\nWin+. — эмодзи и символы\nWin+Shift+S / PrintScreen — скриншот\nWin+Shift+T — переводчик",
             ToolTipIcon.Info);
     }
 
@@ -136,7 +135,8 @@ public class AppContext : ApplicationContext
     {
         Log.Info("show: history");
         CapturePasteTarget();
-        history ??= new HistoryPanel(this);
+        // окно могли закрыть по Alt+F4 — пересоздаём, иначе «Cannot access a disposed object»
+        if (history == null || history.IsDisposed) history = new HistoryPanel(this);
         history.Open();
     }
 
@@ -144,15 +144,17 @@ public class AppContext : ApplicationContext
     {
         Log.Info("show: emoji");
         CapturePasteTarget();
-        emoji ??= new EmojiPanel(this);
+        if (emoji == null || emoji.IsDisposed) emoji = new EmojiPanel(this);
         emoji.Open();
     }
 
     void ShowSnip()
     {
         Log.Info("show: snip");
+        // цель для последующей вставки из окна скриншота — то, что было активно до оверлея
+        CapturePasteTarget();
         HidePanels();
-        snip ??= new SnipOverlay(this);
+        if (snip == null || snip.IsDisposed) snip = new SnipOverlay(this);
         snip.BeginSnip();
     }
 
@@ -160,18 +162,25 @@ public class AppContext : ApplicationContext
     {
         Log.Info("show: translator");
         CapturePasteTarget();
-        translator ??= new TranslatorForm(this);
+        if (translator == null || translator.IsDisposed) translator = new TranslatorForm(this);
         translator.OpenWithClipboard();
     }
 
-    /// <summary>Открыть переводчик сразу с заданным текстом (например, из истории буфера).</summary>
-    public void ShowTranslatorWithText(string text)
+    /// <summary>
+    /// Открыть переводчик сразу с заданным текстом (например, из истории буфера или окна распознавания).
+    /// target — окно для последующей вставки (передаётся по цепочке, чтобы не терять исходное).
+    /// </summary>
+    public void ShowTranslatorWithText(string text, IntPtr? target = null)
     {
         Log.Info("show: translator (текст из истории)");
-        CapturePasteTarget();
-        translator ??= new TranslatorForm(this);
+        if (target is { } t && Native.IsWindow(t)) SetPasteTarget(t);
+        else CapturePasteTarget();
+        if (translator == null || translator.IsDisposed) translator = new TranslatorForm(this);
         translator.OpenWithText(text);
     }
+
+    /// <summary>Явно задать окно для вставки (вместо «текущее переднее»).</summary>
+    public void SetPasteTarget(IntPtr hwnd) => PasteTarget = hwnd;
 
     SettingsForm? settings;
 
@@ -197,13 +206,6 @@ public class AppContext : ApplicationContext
         emoji?.Dispose(); emoji = null;
         translator?.Dispose(); translator = null;
         snip?.Dispose(); snip = null;
-        snipToast?.Dispose(); snipToast = null;
-    }
-
-    /// <summary>Применение настроек, влияющих на хук (вызывается после сохранения настроек).</summary>
-    public void ApplyHookSettings()
-    {
-        if (hook != null) hook.InterceptSnapshot = S.InterceptPrintScreen;
     }
 
     public void AddRecentSymbol(string ch)
@@ -215,19 +217,23 @@ public class AppContext : ApplicationContext
         S.Save();
     }
 
-    Bitmap? _lastShot;
-
-    /// <summary>Принимает владение снимком: битмап не диспоузится, пока живёт на клипборде.</summary>
-    public void OnScreenshot(Bitmap bmp)
+    /// <summary>
+    /// Окно скриншота: снимок с кнопками Распознать / Копировать / Вставить / Отмена.
+    /// Владение битмапом переходит окну; в буфер и историю снимок попадает только по кнопке.
+    /// </summary>
+    public void ShowShotForm(Bitmap bmp)
     {
-        SuppressClipboard();
-        try { Clipboard.SetImage(bmp); } catch (Exception e) { Log.Error("screenshot clipboard", e); }
-        Store.AddImage(new Bitmap(bmp));
+        Log.Info("show: shot");
+        var f = new ShotForm(this, bmp);
+        f.Open();
+    }
 
-        // держим ссылку на время возможного OCR, показываем плашку (она фокус не забирает)
-        _lastShot = bmp;
-        snipToast ??= new SnipToast(this);
-        snipToast.ShowFor(bmp);
+    /// <summary>Окно распознавания: снимок сверху, распознанный текст снизу. Владение битмапом переходит окну.</summary>
+    public void ShowOcrForm(Bitmap bmp)
+    {
+        Log.Info("show: ocr");
+        var f = new OcrForm(this, bmp);
+        f.Show();
     }
 
     // ——— буфер обмена ———
@@ -370,7 +376,7 @@ public class AppContext : ApplicationContext
         Add("История буфера (Win+V)", ShowHistory);
         Add("Эмодзи и символы (Win+.)", ShowEmoji);
         Add("Скриншот (Win+Shift+S)", ShowSnip);
-        Add("Переводчик (Win+T)", ShowTranslator);
+        Add("Переводчик (Win+Shift+T)", ShowTranslator);
         menu.Items.Add(new ToolStripSeparator());
         Add("Настройки…", ShowSettings);
         Add("Открыть папку данных", () =>

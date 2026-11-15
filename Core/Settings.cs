@@ -23,13 +23,10 @@ public class Settings
     public string OcrEngine { get; set; } = "";
     public string OcrGcvKey { get; set; } = "";
 
-    // PrintScreen (с любыми модификаторами) открывает скриншот Copeer вместо системного
-    public bool InterceptPrintScreen { get; set; } = true;
-
-    // плашка после снимка: секунд до скрытия, когда курсор не на ней.
-    // 0 — скрыть сразу, -1 — висит, пока пользователь не закроет
-    public int SnipToastTimeoutSec { get; set; } = 30;
-    public bool SnipToastRememberTimeout { get; set; } = true;
+    // скрытие панелей Win+V и Win+.: "focus" — сразу при потере фокуса и курсора,
+    // "timer" — через PanelHideSec секунд (0 — сразу), "never" — пока не закроют вручную
+    public string PanelHideMode { get; set; } = "focus";
+    public int PanelHideSec { get; set; } = 30;
 
     public static string AppDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Copeer");

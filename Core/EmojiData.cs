@@ -13,7 +13,11 @@ public static class EmojiData
     const string O = "Объекты";
     const string T = "Символы";
 
-    public static readonly string[] Categories = { "Все", F, G, H, A, E, O, T };
+    /// <summary>Категории для вкладки эмодзи (символы — отдельная вкладка).</summary>
+    public static readonly string[] Categories = { "Все", F, G, H, A, E, O };
+
+    /// <summary>Имя категории специальных символов (вкладка «Символы»).</summary>
+    public const string SymbolsCat = T;
 
     public static readonly Sym[] All =
     {

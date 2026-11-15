@@ -3,8 +3,8 @@ using Copeer.Core;
 namespace Copeer.UI;
 
 /// <summary>
-/// Оверлей скриншота (Win+Shift+S): «замораживает» экран, пользователь выделяет область,
-/// снимок попадает в буфер обмена и в историю.
+/// Оверлей скриншота (Win+Shift+S или PrintScreen): «замораживает» экран, пользователь
+/// выделяет область (размер показывается на рамке) → открывается окно скриншота (ShotForm).
 /// </summary>
 class SnipOverlay : Form
 {
@@ -78,8 +78,19 @@ class SnipOverlay : Form
             using var pen = new Pen(Theme.Accent, 2);
             e.Graphics.DrawRectangle(pen, _sel);
             TextRenderer.DrawText(e.Graphics, $"{_sel.Width}×{_sel.Height}", Font,
-                new Point(_sel.X, Math.Max(2, _sel.Y - 22)), Color.White);
+                BadgeRect(), Color.White,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
+    }
+
+    // размер в пикселях — прямо на рамке выделения: под нижним краем
+    // (или над верхним, если до низа экрана места нет)
+    Rectangle BadgeRect()
+    {
+        var vs = SystemInformation.VirtualScreen;
+        var r = new Rectangle(_sel.X, _sel.Bottom + 3, _sel.Width, 20);
+        if (r.Bottom > vs.Bottom) r.Y = _sel.Top - 23;
+        return r;
     }
 
     void Complete()
@@ -91,8 +102,9 @@ class SnipOverlay : Form
             if (_frozen == null) return;
             // режем из «замороженного» кадра: живой экран мог ещё не убрать оверлей
             var shot = _frozen.Clone(r, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-            // владение переходит к OnScreenshot (битмап остаётся жить на клипборде)
-            _c.OnScreenshot(shot);
+            // владение снимком переходит в окно скриншота: там пользователь решит —
+            // распознать, скопировать, вставить или отменить
+            _c.ShowShotForm(shot);
         }
         catch (Exception ex) { Log.Error("snip capture", ex); }
         Cleanup();

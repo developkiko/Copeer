@@ -2,7 +2,11 @@ using Copeer.Core;
 
 namespace Copeer.UI;
 
-/// <summary>Всплывающая панель истории буфера (Win+V): поиск, Enter/двойной клик — вставить.</summary>
+/// <summary>
+/// Всплывающая панель истории буфера (Win+V): поиск, мультивыделение Ctrl/Shift,
+/// кнопки Распознать / Перевести / Вставить / В файл / Отмена.
+/// Enter или двойной клик — вставить (одиночное или мульти).
+/// </summary>
 class HistoryPanel : Form
 {
     readonly AppContext _c;
@@ -10,7 +14,8 @@ class HistoryPanel : Form
     readonly ListBox _list = null!;
     readonly Button _btnOcr = null!;
     readonly Button _btnTr = null!;
-    readonly Label _hint = null!;
+    readonly Button _btnPaste = null!;
+    readonly Button _btnFile = null!;
     readonly List<Entry> _view = new();
     readonly Dictionary<string, Image> _thumbs = new();
     readonly System.Windows.Forms.Timer _life = new() { Interval = 250 };
@@ -38,7 +43,8 @@ class HistoryPanel : Form
             BorderStyle = BorderStyle.FixedSingle,
             Font = new Font("Segoe UI", 10.5f)
         };
-        _search.TextChanged += (s, e) => Repopulate();        _search.KeyDown += (s, e) =>
+        _search.TextChanged += (s, e) => Repopulate();
+        _search.KeyDown += (s, e) =>
         {
             if (e.KeyCode == Keys.Down && _list.Items.Count > 0)
             {
@@ -53,38 +59,7 @@ class HistoryPanel : Form
                 _list.Focus();
             }
         };
-        // кнопки действий над выбранной строкой: распознать картинку / перевести текст
-        _btnOcr = new Button
-        {
-            Text = "🔍",
-            Dock = DockStyle.Right,
-            Width = 34,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Theme.Button,
-            ForeColor = Theme.Text,
-            Enabled = false,
-            TabStop = false,
-            Cursor = Cursors.Hand
-        };
-        _btnOcr.FlatAppearance.BorderSize = 0;
-        _btnOcr.Click += (s, e) => _ = OcrSelectedAsync();
-        _btnTr = new Button
-        {
-            Text = "🌐",
-            Dock = DockStyle.Right,
-            Width = 34,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Theme.Button,
-            ForeColor = Theme.Text,
-            Enabled = false,
-            TabStop = false,
-            Cursor = Cursors.Hand
-        };
-        _btnTr.FlatAppearance.BorderSize = 0;
-        _btnTr.Click += (s, e) => TranslateSelected();
         top.Controls.Add(_search);
-        top.Controls.Add(_btnOcr);
-        top.Controls.Add(_btnTr);
 
         _list = new ListBox
         {
@@ -95,58 +70,75 @@ class HistoryPanel : Form
             DrawMode = DrawMode.OwnerDrawFixed,
             ItemHeight = 40,
             Font = new Font("Segoe UI", 9.5f),
-            IntegralHeight = false
+            IntegralHeight = false,
+            SelectionMode = SelectionMode.MultiExtended // нативные Ctrl/Shift Windows
         };
         _list.DrawItem += List_DrawItem;
         _list.HandleCreated += (s, e) => Native.ScrollbarTheme(_list.Handle);
         _list.DoubleClick += (s, e) => PasteSelected();
         _list.KeyDown += (s, e) =>
         {
-            if (e.KeyCode == Keys.Delete && _list.SelectedIndex >= 0)
+            if (e.KeyCode == Keys.Delete)
             {
-                // Changed перестроит список и почистит миниатюру
-                _c.Store.Remove(_view[_list.SelectedIndex]);
+                foreach (var it in SelectedEntries) _c.Store.Remove(it);
+                e.Handled = e.SuppressKeyPress = true;
             }
         };
 
-        var hint = new Label
+        // нижняя панель кнопок действий над выделением
+        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 40, BackColor = Theme.Panel, Padding = new Padding(6, 5, 6, 5) };
+        var bar = new FlowLayoutPanel
         {
-            Dock = DockStyle.Bottom,
-            Height = 24,
-            Text = "Enter / 2×клик — вставить   •   L — распознать   •   T — перевести   •   Del — удалить   •   Esc",
-            ForeColor = Theme.Text,
-            BackColor = Theme.Panel, // статусная строка выделена цветом панели
-            Font = new Font("Segoe UI", 8.5f),
-            TextAlign = ContentAlignment.MiddleCenter
+            Dock = DockStyle.Fill,
+            BackColor = Theme.Panel,
+            WrapContents = false
         };
-        _hint = hint;
+        _btnOcr = BarButton("Распознать", 88);
+        _btnOcr.Click += (s, e) => OcrSelected();
+        _btnTr = BarButton("Перевести", 82);
+        _btnTr.Click += (s, e) => TranslateSelected();
+        _btnPaste = BarButton("Вставить", 78);
+        _btnPaste.Click += (s, e) => PasteSelected();
+        _btnFile = BarButton("В файл", 68);
+        _btnFile.Click += (s, e) => FileSelected();
+        var btnCancel = BarButton("Отмена", 70);
+        btnCancel.Click += (s, e) => HideLive();
+        bar.Controls.AddRange(new Control[] { _btnOcr, _btnTr, _btnPaste, _btnFile, btnCancel });
+        bottom.Controls.Add(bar);
 
         Controls.Add(_list);
         Controls.Add(top);
-        Controls.Add(hint);
+        Controls.Add(bottom);
 
         _list.SelectedIndexChanged += (s, e) => UpdateActions();
         UpdateActions();
 
-        KeyDown += (s, e) =>        {
+        KeyDown += (s, e) =>
+        {
             if (e.KeyCode == Keys.Escape) { HideLive(); return; }
             if (ActiveControl == _search)
             {
-                // Enter в поиске = вставить верхний результат
-                if (e.KeyCode == Keys.Enter && Selected != null)
+                // Enter в поиске = вставить выделенный (по умолчанию верхний результат)
+                if (e.KeyCode == Keys.Enter && SelectedEntries.Count > 0)
                 {
                     e.Handled = e.SuppressKeyPress = true;
                     PasteSelected();
                 }
                 return; // в поиске печатают — L/T не перехватываем
             }
-            if (e.KeyCode == Keys.Enter && Selected != null)
+            if (e.Control && e.KeyCode == Keys.A)
+            {
+                e.Handled = e.SuppressKeyPress = true;
+                SelectAll();
+                return;
+            }
+            if (e.KeyCode == Keys.Enter && SelectedEntries.Count > 0)
             {
                 e.Handled = e.SuppressKeyPress = true;
                 PasteSelected();
                 return;
             }
-            if (e.KeyCode == Keys.L && _btnOcr.Enabled) { e.Handled = e.SuppressKeyPress = true; _ = OcrSelectedAsync(); }
+            if (e.KeyCode == Keys.L && _btnOcr.Enabled) { e.Handled = e.SuppressKeyPress = true; OcrSelected(); }
             if (e.KeyCode == Keys.T && _btnTr.Enabled) { e.Handled = e.SuppressKeyPress = true; TranslateSelected(); }
         };
         // правый клик — закрыть (для режима «пока не закроют»)
@@ -154,18 +146,35 @@ class HistoryPanel : Form
         _list.MouseClick += (s, e) => { if (e.Button == MouseButtons.Right) HideLive(); };
         _life.Tick += (s, e) => TickLife();
         _c.Store.Changed += OnStoreChanged;
+
+        // окно можно таскать за фоны: подложку поиска и подложку кнопок
+        // (клик по самому полю/кнопкам работает как обычно — MouseDown до них не доходит)
+        Ui.MakeDraggable(this, top, bottom, bar);
     }
 
-    // видимость: пока фокус или курсор на панели — живём; потеряли и то и другое —
-    // отсчёт SnipToastTimeoutSec (0 — скрыть сразу, -1 — пока не закроют)
+    Button BarButton(string text, int width) => new Button
+    {
+        Text = text,
+        Width = width,
+        Height = 29,
+        FlatStyle = FlatStyle.Flat,
+        BackColor = Theme.Button,
+        ForeColor = Theme.Text,
+        Margin = new Padding(2, 0, 2, 0),
+        Cursor = Cursors.Hand,
+        TabStop = false,
+        Enabled = false
+    };
+
+    // видимость панели — по настройке PanelHideMode (см. Ui.PanelShouldHide)
     void TickLife()
     {
-        int t = _c.S.SnipToastTimeoutSec;
-        if (t < 0) return;
-        if (ContainsFocus || Bounds.Contains(Cursor.Position)) { _leftAt = null; return; }
-        if (t == 0) { HideLive(); return; }
-        _leftAt ??= DateTime.UtcNow;
-        if ((DateTime.UtcNow - _leftAt.Value).TotalSeconds >= t) HideLive();
+        if (Ui.PanelShouldHide(this, _c.S, _leftAt, out var left))
+        {
+            HideLive();
+            return;
+        }
+        _leftAt = left;
     }
 
     void HideLive()
@@ -181,54 +190,81 @@ class HistoryPanel : Form
         if (!Visible) _life.Stop();
     }
 
-    Entry? Selected => _list.SelectedIndex >= 0 && _list.SelectedIndex < _view.Count ? _view[_list.SelectedIndex] : null;
+    List<Entry> SelectedEntries
+    {
+        get
+        {
+            var res = new List<Entry>();
+            foreach (int i in _list.SelectedIndices)
+                if (i >= 0 && i < _view.Count) res.Add(_view[i]);
+            return res;
+        }
+    }
+
+    void SelectAll()
+    {
+        _list.BeginUpdate();
+        for (int i = 0; i < _view.Count; i++) _list.SetSelected(i, true);
+        _list.EndUpdate();
+    }
 
     void UpdateActions()
     {
-        var it = Selected;
-        _btnOcr.Enabled = it is { Kind: EntryKind.Image } && Ocr.IsConfigured(_c.S);
-        _btnTr.Enabled = it is { Kind: EntryKind.Text };
+        var sel = SelectedEntries;
+        _btnOcr.Enabled = sel.Any(x => x is { Kind: EntryKind.Image, ImageFile: { } }) && Ocr.IsConfigured(_c.S);
+        _btnTr.Enabled = sel.Any(x => x is { Kind: EntryKind.Text, Text.Length: > 0 });
+        _btnPaste.Enabled = _btnFile.Enabled = sel.Count > 0;
     }
 
-    async Task OcrSelectedAsync()
+    void OcrSelected()
     {
-        if (Selected is not { Kind: EntryKind.Image, ImageFile: { } file }) return;
+        var img = SelectedEntries.FirstOrDefault(x => x is { Kind: EntryKind.Image, ImageFile: { } });
+        if (img == null) return;
         try
         {
-            using var bmp = new Bitmap(file);
-            var res = await Ocr.RecognizeAsync(_c.S, bmp);
-            if (res.Ok)
-            {
-                _c.SuppressClipboard();
-                try { Clipboard.SetText(res.Text); } catch { }
-                _c.Store.AddText(res.Text); // Changed обновит список, текст окажется сверху
-            }
-            else
-            {
-                MessageBox.Show(this, res.Error, "Распознавание текста", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
+            var bmp = new Bitmap(img.ImageFile!);
+            // окно, вызвавшее распознавание, закрывается — открывается окно распознавания
+            HideLive();
+            _c.ShowOcrForm(bmp);
         }
-        catch (Exception ex) { Log.Error("history ocr", ex); }
+        catch (Exception ex) { Log.Error("history ocr open", ex); }
     }
 
     void TranslateSelected()
     {
-        if (Selected is { Kind: EntryKind.Text } t && t.Text.Length > 0)
-            _c.ShowTranslatorWithText(t.Text);
+        var texts = SelectedEntries
+            .Where(x => x is { Kind: EntryKind.Text, Text.Length: > 0 })
+            .Select(x => x.Text)
+            .ToList();
+        if (texts.Count == 0) return;
+        HideLive();
+        _c.ShowTranslatorWithText(string.Join("\n", texts));
+    }
+
+    void FileSelected()
+    {
+        var sel = SelectedEntries;
+        if (sel.Count == 0) return;
+        try
+        {
+            SaveHelper.SaveEntries(this, sel);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("save to file", ex);
+            MessageBox.Show(this, "Не удалось сохранить: " + ex.Message, "В файл",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     // новый элемент появился, пока панель открыта — перестраиваем, сохраняя выделение
     void OnStoreChanged()
     {
         if (!Visible) return;
-        var selId = _list.SelectedIndex >= 0 && _list.SelectedIndex < _view.Count
-            ? _view[_list.SelectedIndex].Id : null;
+        var selIds = new HashSet<string>(SelectedEntries.Select(x => x.Id));
         Repopulate();
-        if (selId != null)
-        {
-            var idx = _view.FindIndex(x => x.Id == selId);
-            if (idx >= 0) _list.SelectedIndex = idx;
-        }
+        for (int i = 0; i < _view.Count; i++)
+            if (selIds.Contains(_view[i].Id)) _list.SetSelected(i, true);
         PruneThumbs();
     }
 
@@ -257,7 +293,7 @@ class HistoryPanel : Form
         // без прокрутки. Сторону выбираем ту, где больше места (обычно над курсором)
         var p = Cursor.Position;
         var wa = Screen.FromPoint(p).WorkingArea;
-        int content = 46 + _view.Count * _list.ItemHeight + 24 + 10;
+        int content = 46 + _view.Count * _list.ItemHeight + 40 + 8;
         int spaceAbove = p.Y - wa.Top - 14;
         int spaceBelow = wa.Bottom - p.Y - 14;
         bool above = spaceAbove >= spaceBelow;
@@ -292,12 +328,15 @@ class HistoryPanel : Form
         foreach (var it in _view) _list.Items.Add(it);
         _list.EndUpdate();
         if (_view.Count > 0) _list.SelectedIndex = 0;
+        UpdateActions();
     }
 
     void PasteSelected()
     {
-        if (_list.SelectedIndex < 0 || _list.SelectedIndex >= _view.Count) return;
-        Paster.Paste(_c, _view[_list.SelectedIndex]);
+        var sel = SelectedEntries;
+        if (sel.Count == 0) return;
+        if (sel.Count == 1) Paster.Paste(_c, sel[0]);
+        else Paster.PasteMulti(_c, sel);
     }
 
     static readonly Font TsFont = new("Segoe UI", 7.5f);
@@ -306,7 +345,7 @@ class HistoryPanel : Form
     {
         if (e.Index < 0) return;
         bool sel = (e.State & DrawItemState.Selected) != 0;
-        bool zebra = e.Index % 2 == 1; // чередование строк
+        bool zebra = e.Index % 2 == 1; // чередование строк: фон и слегка его затемнённая версия
         using (var bg = new SolidBrush(sel ? Theme.SelRow : zebra ? Theme.Zebra : Theme.Back))
             e.Graphics.FillRectangle(bg, e.Bounds);
 

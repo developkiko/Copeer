@@ -13,6 +13,9 @@ class TranslatorForm : Form
     readonly ComboBox _engine = null!;
     readonly Label _status = null!;
     readonly Button _go = null!;
+    readonly Button _btnCopy = null!;
+    readonly Button _btnInsert = null!;
+    readonly Button _btnFile = null!;
     bool _busy;
 
     public TranslatorForm(AppContext c)
@@ -74,6 +77,7 @@ class TranslatorForm : Form
             _c.S.TargetLanguage = Langs.List[_lang.SelectedIndex].Code;
             _c.S.Save();
         };
+        Ui.ThemedCombo(_lang);
         Controls.Add(_lang);
 
         _engine = new ComboBox
@@ -94,6 +98,7 @@ class TranslatorForm : Form
             else _c.S.Engine = "";
             _c.S.Save();
         };
+        Ui.ThemedCombo(_engine);
         Controls.Add(_engine);
 
         _go = new Button
@@ -124,27 +129,55 @@ class TranslatorForm : Form
         _dst.HandleCreated += (s, e) => Native.ScrollbarTheme(_dst.Handle);
         Controls.Add(_dst);
 
-        var copy = MakeButton("Копировать", new Point(14, 390), new Size(120, 30));
-        copy.Click += (s, e) =>
+        // кнопки: Копировать / Вставить / В файл / Отмена — пусто = disabled
+        _btnCopy = MakeButton("Копировать", new Point(14, 392), new Size(110, 30));
+        _btnCopy.Click += (s, e) =>
         {
             if (_dst.Text.Length == 0) return;
             _c.SuppressClipboard();
             try { Clipboard.SetText(_dst.Text); _c.Store.AddText(_dst.Text); _status.Text = "Скопировано ✓"; }
             catch { }
         };
-        Controls.Add(copy);
+        Controls.Add(_btnCopy);
 
-        var insert = MakeButton("Вставить в окно", new Point(142, 390), new Size(150, 30));
-        insert.Click += (s, e) => { if (_dst.Text.Length > 0) Paster.PasteText(_c, _dst.Text); };
-        Controls.Add(insert);
+        _btnInsert = MakeButton("Вставить в окно", new Point(130, 392), new Size(150, 30));
+        _btnInsert.Click += (s, e) => { if (_dst.Text.Length > 0) Paster.PasteText(_c, _dst.Text); };
+        Controls.Add(_btnInsert);
+
+        _btnFile = MakeButton("В файл", new Point(286, 392), new Size(100, 30));
+        _btnFile.Click += (s, e) =>
+        {
+            // сохраняем перевод, а если его ещё нет — исходный текст
+            var text = _dst.Text.Length > 0 ? _dst.Text : _src.Text;
+            if (text.Length == 0) return;
+            try
+            {
+                if (SaveHelper.SaveText(this, text)) _status.Text = "Сохранено ✓";
+            }
+            catch (Exception ex)
+            {
+                Log.Error("translator save", ex);
+                MessageBox.Show(this, "Не удалось сохранить: " + ex.Message, "В файл",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        };
+        Controls.Add(_btnFile);
+
+        var cancel = MakeButton("Отмена", new Point(392, 392), new Size(110, 30));
+        cancel.Click += (s, e) => Hide();
+        Controls.Add(cancel);
 
         _status = new Label
         {
-            Location = new Point(306, 398),
+            Location = new Point(14, 428),
             AutoSize = true,
             ForeColor = Theme.TextDim
         };
         Controls.Add(_status);
+
+        _src.TextChanged += (s, e) => UpdateButtons();
+        _dst.TextChanged += (s, e) => UpdateButtons();
+        UpdateButtons();
 
         Load += async (s, e) => await LoadEnginesAsync();
     }
@@ -158,6 +191,13 @@ class TranslatorForm : Form
         BackColor = Theme.Button,
         ForeColor = Theme.Text
     };
+
+    // Копировать/Вставить — есть перевод; В файл — есть хоть что-то (перевод или исходник)
+    void UpdateButtons()
+    {
+        _btnCopy.Enabled = _btnInsert.Enabled = _dst.Text.Length > 0;
+        _btnFile.Enabled = _dst.Text.Length > 0 || _src.Text.Length > 0;
+    }
 
     class EngineItem
     {

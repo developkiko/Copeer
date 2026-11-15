@@ -25,9 +25,8 @@ class SettingsForm : Form
     readonly ComboBox _theme;
     readonly ComboBox _ocrEngine;
     readonly TextBox _gcvKey;
-    readonly CheckBox _chkPrint;
-    readonly NumericUpDown _toastTime;
-    readonly CheckBox _rememberTimeout;
+    readonly ComboBox _hideMode;
+    readonly NumericUpDown _hideSec;
     readonly CheckBox _autostart;
     readonly ToolTip _tips = new();
     readonly List<Button> _helpButtons = new();
@@ -283,8 +282,8 @@ class SettingsForm : Form
         };
         Controls.Add(_ocrEngine);
         MakeHelp(
-            "Как работает распознавание: Win+Shift+S → выделяешь область → внизу появляется плашка → кнопка «Распознать текст».\n" +
-            "Также можно выбрать картинку в истории (Win+V) и нажать 🔍 или клавишу L.\n\n" +
+            "Как работает распознавание: Win+Shift+S или PrintScreen → выделяешь область → кнопка «Распознать» в окне снимка.\n" +
+            "Также можно выбрать картинку в истории (Win+V) и нажать «Распознать» или клавишу L.\n\n" +
             "«Встроенный (Windows)» — офлайн, без ключей; нужен языковой пакет OCR (обычно уже стоит).\n" +
             "«Google Cloud Vision» — точнее на сложных текстах и рукописном, нужен ключ (см. [?] у поля ключа).\n" +
             "Клик — раздел учётных данных Google.",
@@ -320,34 +319,47 @@ class SettingsForm : Form
             Text = "Ключ: console.cloud.google.com → Cloud Vision API → Credentials (1000 запросов/мес бесплатно)"
         });
 
-        Controls.Add(Section("СКРИНШОТ И ПЛАШКА", 614));
+        Controls.Add(Section("ПАНЕЛИ", 614));
 
-        _chkPrint = MakeCheck("PrintScreen (с Shift/Alt/Ctrl) открывает скриншот Copeer", 14, 644, _c.S.InterceptPrintScreen);
-        Controls.Add(_chkPrint);
+        Controls.Add(L("Скрытие панелей Win+V и Win+.", 14, 644));
+        _hideMode = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Location = new Point(300, 641),
+            Size = new Size(246, 26),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Field,
+            ForeColor = Theme.Text
+        };
+        _hideMode.Items.Add("Сразу при потере фокуса");
+        _hideMode.Items.Add("Через N секунд");
+        _hideMode.Items.Add("Не скрывать (пока не закроют)");
+        _hideMode.SelectedIndex = _c.S.PanelHideMode switch { "timer" => 1, "never" => 2, _ => 0 };
+        _hideMode.SelectedIndexChanged += (s, e) => _hideSec.Enabled = _hideMode.SelectedIndex == 1;
+        Ui.ThemedCombo(_hideMode);
+        Controls.Add(_hideMode);
 
-        Controls.Add(L("Панели и плашка: секунд до скрытия", 14, 676));
-        _toastTime = new NumericUpDown
+        Controls.Add(L("Секунд до скрытия", 14, 676));
+        _hideSec = new NumericUpDown
         {
             Location = new Point(300, 673),
             Size = new Size(90, 25),
-            Minimum = -1,
+            Minimum = 0,
             Maximum = 3600,
             BackColor = Theme.Field,
             ForeColor = Theme.Text,
-            BorderStyle = BorderStyle.FixedSingle
+            BorderStyle = BorderStyle.FixedSingle,
+            Enabled = _hideMode.SelectedIndex == 1
         };
-        _toastTime.Value = _c.S.SnipToastTimeoutSec;
-        Controls.Add(_toastTime);
-
-        _rememberTimeout = MakeCheck("запомнить", 400, 675, _c.S.SnipToastRememberTimeout);
-        Controls.Add(_rememberTimeout);
+        _hideSec.Value = _c.S.PanelHideSec;
+        Controls.Add(_hideSec);
 
         Controls.Add(new Label
         {
             AutoSize = true,
             Location = new Point(14, 706),
             ForeColor = Theme.TextDim,
-            Text = "Пока курсор или фокус на окне — оно не исчезает. 0 — скрыть сразу, −1 — пока не закрыть (Esc/правый клик/✕). Плашку можно таскать мышью"
+            Text = "«Сразу» — панель исчезает, как только теряет и фокус, и курсор; «Не скрывать» — до Esc / правого клика / «Отмены»"
         });
 
         Controls.Add(Section("СИСТЕМА", 736));
@@ -389,17 +401,17 @@ class SettingsForm : Form
                 lbl.ForeColor = Theme.Text;
         _keyStatus.ForeColor = Theme.TextDim;
         _key.BackColor = Theme.Field; _key.ForeColor = Theme.Text;
-        foreach (var cb in new[] { _lang, _engine, _position, _theme, _ocrEngine })
+        foreach (var cb in new[] { _lang, _engine, _position, _theme, _ocrEngine, _hideMode })
         {
             cb.BackColor = Theme.Field;
             cb.ForeColor = Theme.Text;
         }
-        foreach (var n in new[] { _limit, _maxLen, _delay, _toastTime })
+        foreach (var n in new[] { _limit, _maxLen, _delay, _hideSec })
         {
             n.BackColor = Theme.Field;
             n.ForeColor = Theme.Text;
         }
-        foreach (var chk in new[] { _captureImages, _captureFiles, _leavePasted, _autostart, _chkPrint, _rememberTimeout })
+        foreach (var chk in new[] { _captureImages, _captureFiles, _leavePasted, _autostart })
             chk.ForeColor = Theme.Text;
         foreach (var b in _helpButtons)
         {
@@ -532,13 +544,10 @@ class SettingsForm : Form
         _c.S.Theme = _theme.SelectedIndex == 1 ? "light" : "dark";
         _c.S.OcrEngine = _ocrEngine.SelectedIndex switch { 1 => "windows", 2 => "gcv", _ => "" };
         _c.S.OcrGcvKey = _gcvKey.Text.Trim();
-        _c.S.InterceptPrintScreen = _chkPrint.Checked;
-        _c.S.SnipToastRememberTimeout = _rememberTimeout.Checked;
-        // без галочки «запомнить» время живёт только до перезапуска
-        if (_rememberTimeout.Checked) _c.S.SnipToastTimeoutSec = (int)_toastTime.Value;
+        _c.S.PanelHideMode = _hideMode.SelectedIndex switch { 1 => "timer", 2 => "never", _ => "focus" };
+        _c.S.PanelHideSec = (int)_hideSec.Value;
         _c.S.Autostart = _autostart.Checked;
         Autostart.Set(_autostart.Checked);
-        _c.ApplyHookSettings();
         _c.S.Save();
 
         Log.Info($"settings saved (theme={_c.S.Theme}, engine='{_c.S.Engine}', autostart={_c.S.Autostart})");

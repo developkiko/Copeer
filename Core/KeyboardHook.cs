@@ -32,9 +32,6 @@ public class KeyboardHook : IDisposable
     IntPtr _hook;
     readonly HashSet<uint> _skip = new(); // vk, занятые нашим RegisterHotKey
 
-    /// <summary>PrintScreen (с любыми модификаторами) глотается и открывает скриншот Copeer.</summary>
-    public bool InterceptSnapshot;
-
     delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
 
     [StructLayout(LayoutKind.Sequential)]
@@ -89,8 +86,9 @@ public class KeyboardHook : IDisposable
                                  $"ctrl={Key(VK_CONTROL)} alt={Key(VK_MENU)} inj={(kbd.flags & LLKHF_INJECTED) != 0}");
                 }
 
-                // PrintScreen — без требования Win, с любыми модификаторами
-                if (InterceptSnapshot && kbd.vkCode == VK_SNAPSHOT)
+                // PrintScreen — только «голый», без модификаторов: Alt+PrintScreen, Win+PrintScreen
+                // и прочие комбинации сохраняют нативное поведение системы
+                if (kbd.vkCode == VK_SNAPSHOT && NoModifiers())
                 {
                     int snap = (int)kbd.vkCode;
                     if (Sync != null)
@@ -131,12 +129,12 @@ public class KeyboardHook : IDisposable
         }
     }
 
-    // базовые комбинации (без Shift) + отдельно Win+Shift+S
+    // базовые комбинации (без Shift) + отдельно Win+Shift+S / Win+Shift+T
     static bool Matches(uint vk)
     {
         if (!Key(VK_LWIN) && !Key(VK_RWIN)) return false;
         if (Key(VK_CONTROL) || Key(VK_MENU) || Key(VK_SHIFT)) return false;
-        return vk is VK_PERIOD or VK_T or VK_V;
+        return vk is VK_PERIOD or VK_V;
     }
 
     static bool MatchesShift(uint vk)
@@ -144,10 +142,15 @@ public class KeyboardHook : IDisposable
         if (Matches(vk)) return true;
         if (!Key(VK_LWIN) && !Key(VK_RWIN)) return false;
         if (Key(VK_CONTROL) || Key(VK_MENU) || !Key(VK_SHIFT)) return false;
-        return vk == VK_S; // Win + Shift + S
+        return vk is VK_S or VK_T; // Win + Shift + S (скриншот), Win + Shift + T (переводчик)
     }
 
     static bool Key(uint vk) => (GetAsyncKeyState((int)vk) & 0x8000) != 0;
+
+    // ни один модификатор не зажат — для «голого» PrintScreen
+    static bool NoModifiers() =>
+        !Key(VK_SHIFT) && !Key(VK_CONTROL) && !Key(VK_MENU) &&
+        !Key(VK_LWIN) && !Key(VK_RWIN);
 
     public void Dispose()
     {
