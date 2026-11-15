@@ -322,7 +322,7 @@ class SettingsForm : Form
         Controls.Add(Section("ПАНЕЛИ", 614));
 
         Controls.Add(L("Скрытие панелей Win+V и Win+.", 14, 644));
-        _hideMode = new ComboBox
+        var modeBox = _hideMode = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
             Location = new Point(300, 641),
@@ -331,16 +331,15 @@ class SettingsForm : Form
             BackColor = Theme.Field,
             ForeColor = Theme.Text
         };
-        _hideMode.Items.Add("Сразу при потере фокуса");
-        _hideMode.Items.Add("Через N секунд");
-        _hideMode.Items.Add("Не скрывать (пока не закроют)");
-        _hideMode.SelectedIndex = _c.S.PanelHideMode switch { "timer" => 1, "never" => 2, _ => 0 };
-        _hideMode.SelectedIndexChanged += (s, e) => _hideSec.Enabled = _hideMode.SelectedIndex == 1;
-        Ui.ThemedCombo(_hideMode);
-        Controls.Add(_hideMode);
+        modeBox.Items.Add("Сразу при потере фокуса");
+        modeBox.Items.Add("Через N секунд");
+        modeBox.Items.Add("Не скрывать (пока не закроют)");
+        modeBox.SelectedIndex = _c.S.PanelHideMode switch { "timer" => 1, "never" => 2, _ => 0 };
+        Ui.ThemedCombo(modeBox);
+        Controls.Add(modeBox);
 
         Controls.Add(L("Секунд до скрытия", 14, 676));
-        _hideSec = new NumericUpDown
+        var secBox = _hideSec = new NumericUpDown
         {
             Location = new Point(300, 673),
             Size = new Size(90, 25),
@@ -349,10 +348,11 @@ class SettingsForm : Form
             BackColor = Theme.Field,
             ForeColor = Theme.Text,
             BorderStyle = BorderStyle.FixedSingle,
-            Enabled = _hideMode.SelectedIndex == 1
+            Enabled = modeBox.SelectedIndex == 1
         };
-        _hideSec.Value = _c.S.PanelHideSec;
-        Controls.Add(_hideSec);
+        secBox.Value = _c.S.PanelHideSec;
+        Controls.Add(secBox);
+        modeBox.SelectedIndexChanged += (s, e) => secBox.Enabled = modeBox.SelectedIndex == 1;
 
         Controls.Add(new Label
         {
