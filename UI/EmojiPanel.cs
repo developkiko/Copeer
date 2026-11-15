@@ -310,6 +310,9 @@ class EmojiPanel : Form
             ClearGif();
             if (tab == Tab.Gif)
             {
+                // спрятать кнопки эмодзи/символов — сетка теперь только для GIF,
+                // иначе они остаются висеть перед превью (ApplyFilter тут не вызывается)
+                HideSymbolButtons();
                 // сразу показываем топ (или поиск, если запрос уже набран)
                 RunGifSearch(_search.Text.Trim());
                 return;
@@ -364,13 +367,19 @@ class EmojiPanel : Form
             _chipButtons[i].BackColor = EmojiData.Categories[i] == _cat ? Theme.Accent : Theme.Chip;
     }
 
+    // кнопки эмодзи/символов прячутся — на вкладке GIF сетка только для превью
+    void HideSymbolButtons()
+    {
+        foreach (var (btn, _) in _buttons) btn.Visible = false;
+        _orderedButtons.Clear(); // стрелки на вкладке GIF не нужны
+    }
+
     void ApplyFilter()
     {
         if (_tab == Tab.Gif)
         {
             // поиск GIF — с задержкой, чтобы не дёргать сеть на каждую букву
-            foreach (var (btn, _) in _buttons) btn.Visible = false;
-            _orderedButtons.Clear(); // стрелки на вкладке GIF не нужны
+            HideSymbolButtons();
             _gifTimer.Stop();
             _gifTimer.Start();
             return;
